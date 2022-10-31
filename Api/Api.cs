@@ -1024,33 +1024,60 @@ namespace QuantConnect.Api
         /// <returns></returns>
         public virtual string Download(string address, IEnumerable<KeyValuePair<string, string>> headers, string userName, string password)
         {
-            using (var client = new WebClient { Credentials = new NetworkCredential(userName, password) })
+            using var handler = new HttpClientHandler
             {
-                client.Proxy = WebRequest.GetSystemWebProxy();
-                if (headers != null)
-                {
-                    foreach (var header in headers)
-                    {
-                        client.Headers.Add(header.Key, header.Value);
-                    }
-                }
-                // Add a user agent header in case the requested URI contains a query.
-                client.Headers.Add("user-agent", "QCAlgorithm.Download(): User Agent Header");
+                Credentials = new NetworkCredential(userName, password),
+                Proxy = WebRequest.GetSystemWebProxy(),
+            };
 
-                try
+            using var client = new HttpClient(handler);
+            if (headers != null)
+            {
+                foreach (var header in headers)
                 {
-                    return client.DownloadString(address);
+                    client.DefaultRequestHeaders.Add(header.Key, header.Value);
                 }
-                catch (WebException exception)
-                {
-                    var message = $"Api.Download(): Failed to download data from {address}";
-                    if (!userName.IsNullOrEmpty() || !password.IsNullOrEmpty())
-                    {
-                        message += $" with username: {userName} and password {password}";
-                    }
+            }
+            // Add a user agent header in case the requested URI contains a query.
+            // Using the latest (2022-10-28) Google Chrome User Agent for Linux
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36");
 
-                    throw new WebException($"{message}. Please verify the source for missing http:// or https://", exception);
+            string GetCustomExceptionMessage()
+            {
+                var message = $"Api.Download(): Failed to download data from {address}";
+                if (!userName.IsNullOrEmpty() || !password.IsNullOrEmpty())
+                {
+                    message += $" with username: {userName} and password {password}";
                 }
+
+                return $"{message}. Please verify the source for missing http:// or https://";
+            }
+
+            try
+            {
+                var response = client.GetAsync(new Uri(address)).Result;
+                
+                response.EnsureSuccessStatusCode();
+
+                return response.Content.ReadAsStringAsync().Result;
+            }
+            catch (AggregateException aggregateException)
+            {
+                var exception = aggregateException.InnerException as HttpRequestException;
+                if (exception != null)
+                {
+                    throw new HttpRequestException(GetCustomExceptionMessage(), exception);
+                }
+
+                throw;
+            }
+            catch (UriFormatException uriFormatException)
+            {
+                throw new UriFormatException(GetCustomExceptionMessage(), uriFormatException);
+            }
+            catch (HttpRequestException httpRequestException)
+            {
+                throw new HttpRequestException(GetCustomExceptionMessage(), httpRequestException);
             }
         }
 

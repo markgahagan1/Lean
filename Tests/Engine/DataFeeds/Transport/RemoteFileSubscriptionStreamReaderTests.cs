@@ -14,9 +14,9 @@
  *
 */
 
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net;
 using NUnit.Framework;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.DataFeeds.Transport;
@@ -111,7 +111,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Transport
             Assert.IsFalse(remoteReader.EndOfStream);
 
             // Fails to get helloworld.com, missing http://
-            Assert.Throws<WebException>(() => new RemoteFileSubscriptionStreamReader(
+            Assert.Throws<UriFormatException>(() => new RemoteFileSubscriptionStreamReader(
                     new SingleEntryDataCacheProvider(new DefaultDataProvider()),
                     @"helloworld.com",
                     Globals.Cache,
