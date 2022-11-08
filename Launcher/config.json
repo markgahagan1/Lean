@@ -12,10 +12,10 @@
   "algorithm-type-name": "BasicTemplateFrameworkAlgorithm",
 
   // Algorithm language selector - options CSharp, Python
-  "algorithm-language": "CSharp",
+  "algorithm-language": "Python",
 
   //Physical DLL location
-  "algorithm-location": "QuantConnect.Algorithm.CSharp.dll",
+  "algorithm-location": "BasicTemplateFrameworkAlgorithm.py",
   //"algorithm-location": "../../../Algorithm.Python/BasicTemplateFrameworkAlgorithm.py",
 
   //Research notebook
