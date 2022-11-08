@@ -25,8 +25,8 @@
   "data-folder": "../../../Data/",
 
   // debugging configuration - options for debugging-method LocalCmdLine, VisualStudio, Debugpy, PyCharm
-  "debugging": false,
-  "debugging-method": "LocalCmdline",
+  "debugging": true,
+  "debugging-method": "DebugPy",
 
   // location of a python virtual env to use libraries from
   //"python-venv": "/venv",
