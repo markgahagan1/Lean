@@ -15,8 +15,8 @@
   "algorithm-language": "Python",
 
   //Physical DLL location
-  "algorithm-location": "BasicTemplateFrameworkAlgorithm.py",
-  //"algorithm-location": "../../../Algorithm.Python/BasicTemplateFrameworkAlgorithm.py",
+  //"algorithm-location": "BasicTemplateFrameworkAlgorithm.py",
+  "algorithm-location": "../../../Algorithm.Python/BasicTemplateFrameworkAlgorithm.py",
 
   //Research notebook
   //"composer-dll-directory": ".",
