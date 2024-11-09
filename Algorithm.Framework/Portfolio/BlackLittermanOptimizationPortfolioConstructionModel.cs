@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -243,21 +243,18 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
         /// <summary>
         /// Will determine the target percent for each insight
         /// </summary>
-        /// <param name="lastActiveInsights">The active insights to generate a target for</param>
+        /// <param name="activeInsights">The active insights to generate a target for</param>
         /// <returns>A target percent for each insight</returns>
-        protected override Dictionary<Insight, double> DetermineTargetPercent(List<Insight> lastActiveInsights)
+        protected override Dictionary<Insight, double> DetermineTargetPercent(List<Insight> activeInsights)
         {
             var targets = new Dictionary<Insight, double>();
 
-            double[,] P;
-            double[] Q;
-            if (TryGetViews(lastActiveInsights, out P, out Q))
+            if (TryGetViews(activeInsights, out var P, out var Q))
             {
                 // Updates the ReturnsSymbolData with insights
-                foreach (var insight in lastActiveInsights)
+                foreach (var insight in activeInsights)
                 {
-                    ReturnsSymbolData symbolData;
-                    if (_symbolDataDict.TryGetValue(insight.Symbol, out symbolData))
+                    if (_symbolDataDict.TryGetValue(insight.Symbol, out var symbolData))
                     {
                         if (insight.Magnitude == null)
                         {
@@ -268,12 +265,11 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
                     }
                 }
                 // Get symbols' returns
-                var symbols = lastActiveInsights.Select(x => x.Symbol).Distinct().ToList();
+                var symbols = activeInsights.Select(x => x.Symbol).Distinct().ToList();
                 var returns = _symbolDataDict.FormReturnsMatrix(symbols);
 
                 // Calculate posterior estimate of the mean and uncertainty in the mean
-                double[,] Σ;
-                var Π = GetEquilibriumReturns(returns, out Σ);
+                var Π = GetEquilibriumReturns(returns, out var Σ);
 
                 ApplyBlackLittermanMasterFormula(ref Π, ref Σ, P, Q);
 
@@ -290,7 +286,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
                     {
                         weight = 0;
                     }
-                    targets[lastActiveInsights.First(insight => insight.Symbol == symbol)] = weight;
+                    targets[activeInsights.First(insight => insight.Symbol == symbol)] = weight;
 
                     sidx++;
                 }
@@ -306,7 +302,7 @@ namespace QuantConnect.Algorithm.Framework.Portfolio
         protected override List<Insight> GetTargetInsights()
         {
             // Get insight that haven't expired of each symbol that is still in the universe
-            var activeInsights = InsightCollection.GetActiveInsights(Algorithm.UtcTime);
+            var activeInsights = Algorithm.Insights.GetActiveInsights(Algorithm.UtcTime).Where(ShouldCreateTargetForInsight);
 
             // Get the last generated active insight for each symbol
             return (from insight in activeInsights

@@ -31,6 +31,16 @@ namespace QuantConnect.Tests.Python
         [Test, TestCaseSource(nameof(TestDataFrameNonExceptionFunctions))]
         public void BackwardsCompatibilityDataFrameDataFrameNonExceptionFunctions(string method, string index, bool cache)
         {
+            if(method == ".to_orc()")
+            {
+                if (OS.IsWindows)
+                {
+                    // not supported in windows
+                    return;
+                }
+                // orc does not support serializing a non-default index for the index; you can .reset_index() to make the index into column(s)
+                method = $".reset_index(){method}";
+            }
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
             using (Py.GIL())

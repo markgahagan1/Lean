@@ -22,6 +22,7 @@ using Fasterflect;
 using QuantConnect.AlgorithmFactory;
 using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
@@ -39,8 +40,6 @@ namespace QuantConnect.Lean.Engine.Setup
     /// </summary>
     public class BrokerageSetupHandler : ISetupHandler
     {
-        private bool _notifiedUniverseSettingsUsed;
-
         /// <summary>
         /// Max allocation limit configuration variable name
         /// </summary>
@@ -102,7 +101,7 @@ namespace QuantConnect.Lean.Engine.Setup
             IAlgorithm algorithm;
 
             // limit load times to 10 seconds and force the assembly to have exactly one derived type
-            var loader = new Loader(false, algorithmNodePacket.Language, BaseSetupHandler.AlgorithmCreationTimeout, names => names.SingleOrAlgorithmTypeName(Config.Get("algorithm-type-name")), WorkerThread);
+            var loader = new Loader(false, algorithmNodePacket.Language, BaseSetupHandler.AlgorithmCreationTimeout, names => names.SingleOrAlgorithmTypeName(Config.Get("algorithm-type-name", algorithmNodePacket.AlgorithmId)), WorkerThread);
             var complete = loader.TryCreateAlgorithmInstanceWithIsolator(assemblyPath, algorithmNodePacket.RamAllocation, out algorithm, out error);
             if (!complete) throw new AlgorithmSetupException($"During the algorithm initialization, the following exception has occurred: {error}");
 
@@ -123,6 +122,8 @@ namespace QuantConnect.Lean.Engine.Setup
             {
                 throw new ArgumentException("BrokerageSetupHandler.CreateBrokerage requires a live node packet");
             }
+
+            Log.Trace($"BrokerageSetupHandler.CreateBrokerage(): creating brokerage '{liveJob.Brokerage}'");
 
             // find the correct brokerage factory based on the specified brokerage in the live job packet
             _factory = Composer.Instance.Single<IBrokerageFactory>(brokerageFactory => brokerageFactory.BrokerageType.MatchesTypeName(liveJob.Brokerage));
@@ -241,7 +242,8 @@ namespace QuantConnect.Lean.Engine.Setup
                         algorithm.SetAvailableDataTypes(BaseSetupHandler.GetConfiguredDataFeeds());
 
                         //Algorithm is live, not backtesting:
-                        algorithm.SetLiveMode(true);
+                        algorithm.SetAlgorithmMode(liveJob.AlgorithmMode);
+                        algorithm.SetDeploymentTarget(liveJob.DeploymentTarget);
 
                         //Initialize the algorithm's starting date
                         algorithm.SetDateTime(DateTime.UtcNow);
@@ -253,6 +255,7 @@ namespace QuantConnect.Lean.Engine.Setup
                         if (optionChainProvider == null)
                         {
                             optionChainProvider = new CachingOptionChainProvider(new LiveOptionChainProvider(parameters.DataCacheProvider, parameters.MapFileProvider));
+                            Composer.Instance.AddPart(optionChainProvider);
                         }
                         // set the option chain provider
                         algorithm.SetOptionChainProvider(optionChainProvider);
@@ -261,22 +264,10 @@ namespace QuantConnect.Lean.Engine.Setup
                         if (futureChainProvider == null)
                         {
                             futureChainProvider = new CachingFutureChainProvider(new LiveFutureChainProvider(parameters.DataCacheProvider));
+                            Composer.Instance.AddPart(futureChainProvider);
                         }
                         // set the future chain provider
                         algorithm.SetFutureChainProvider(futureChainProvider);
-
-                        // set the object store
-                        algorithm.SetObjectStore(parameters.ObjectStore);
-
-                        // If we're going to receive market data from IB, set the default subscription limit to 100, algorithms can override this setting in the Initialize method
-                        if (liveJob.DataQueueHandler.Contains("InteractiveBrokersBrokerage", StringComparison.InvariantCultureIgnoreCase))
-                        {
-                            algorithm.Settings.DataSubscriptionLimit = 100;
-                            var message = $"Detected 'InteractiveBrokers' data feed. Adjusting algorithm Settings.DataSubscriptionLimit to {algorithm.Settings.DataSubscriptionLimit}." +
-                            $" Can override this setting on Initialize.";
-                            algorithm.Debug(message);
-                            Log.Trace($"BrokerageSetupHandler.Setup(): {message}");
-                        }
 
                         //Initialise the algorithm, get the required data:
                         algorithm.Initialize();
@@ -319,6 +310,12 @@ namespace QuantConnect.Lean.Engine.Setup
                     return false;
                 }
 
+                // after algorithm was initialized, should set trading days per year for our great portfolio statistics
+                BaseSetupHandler.SetBrokerageTradingDayPerYear(algorithm);
+
+                var dataAggregator = Composer.Instance.GetPart<IDataAggregator>();
+                dataAggregator?.Initialize(new () { AlgorithmSettings = algorithm.Settings });
+
                 //Finalize Initialization
                 algorithm.PostInitialize();
 
@@ -346,10 +343,6 @@ namespace QuantConnect.Lean.Engine.Setup
                 //Set the starting portfolio value for the strategy to calculate performance:
                 StartingPortfolioValue = algorithm.Portfolio.TotalPortfolioValue;
                 StartingDate = DateTime.Now;
-
-                // we set the free portfolio value based on the initial total value and the free percentage value
-                algorithm.Settings.FreePortfolioValue =
-                    algorithm.Portfolio.TotalPortfolioValue * algorithm.Settings.FreePortfolioValuePercentage;
             }
             catch (Exception err)
             {
@@ -389,17 +382,15 @@ namespace QuantConnect.Lean.Engine.Setup
             return true;
         }
 
-        private bool LoadExistingHoldingsAndOrders(IBrokerage brokerage, IAlgorithm algorithm, SetupHandlerParameters parameters)
+        /// <summary>
+        /// Loads existing holdings and orders
+        /// </summary>
+        protected bool LoadExistingHoldingsAndOrders(IBrokerage brokerage, IAlgorithm algorithm, SetupHandlerParameters parameters)
         {
-            var supportedSecurityTypes = new HashSet<SecurityType>
-            {
-                SecurityType.Equity, SecurityType.Forex, SecurityType.Cfd, SecurityType.Option, SecurityType.Future, SecurityType.FutureOption, SecurityType.IndexOption, SecurityType.Crypto
-            };
-
             Log.Trace("BrokerageSetupHandler.Setup(): Fetching open orders from brokerage...");
             try
             {
-                GetOpenOrders(algorithm, parameters.ResultHandler, parameters.TransactionHandler, brokerage, supportedSecurityTypes);
+                GetOpenOrders(algorithm, parameters.ResultHandler, parameters.TransactionHandler, brokerage);
             }
             catch (Exception err)
             {
@@ -422,19 +413,12 @@ namespace QuantConnect.Lean.Engine.Setup
                     Log.Trace("BrokerageSetupHandler.Setup(): Has existing holding: " + holding);
 
                     // verify existing holding security type
-                    if (!supportedSecurityTypes.Contains(holding.Type))
+                    Security security;
+                    if (!GetOrAddUnrequestedSecurity(algorithm, holding.Symbol, holding.Type, out security))
                     {
-                        Log.Error("BrokerageSetupHandler.Setup(): Unsupported security type: " + holding.Type + "-" + holding.Symbol.Value);
-                        AddInitializationError("Found unsupported security type in existing brokerage holdings: " + holding.Type + ". " +
-                            "QuantConnect currently supports the following security types: " + string.Join(",", supportedSecurityTypes));
-
-                        // keep aggregating these errors
                         continue;
                     }
 
-                    AddUnrequestedSecurity(algorithm, holding.Symbol);
-
-                    var security = algorithm.Securities[holding.Symbol];
                     var exchangeTime = utcNow.ConvertFromUtc(security.Exchange.TimeZone);
 
                     security.Holdings.SetHoldings(holding.AveragePrice, holding.Quantity);
@@ -471,42 +455,12 @@ namespace QuantConnect.Lean.Engine.Setup
             return true;
         }
 
-        private Security AddUnrequestedSecurity(IAlgorithm algorithm, Symbol symbol)
+        private bool GetOrAddUnrequestedSecurity(IAlgorithm algorithm, Symbol symbol, SecurityType securityType, out Security security)
         {
-            if (!algorithm.Securities.TryGetValue(symbol, out Security security))
-            {
-                var resolution = algorithm.UniverseSettings.Resolution;
-                var fillForward = algorithm.UniverseSettings.FillForward;
-                var leverage = algorithm.UniverseSettings.Leverage;
-                var extendedHours = algorithm.UniverseSettings.ExtendedMarketHours;
-
-                if (!_notifiedUniverseSettingsUsed)
-                {
-                    // let's just send the message once
-                    _notifiedUniverseSettingsUsed = true;
-                    algorithm.Debug($"Will use UniverseSettings for automatically added securities for open orders and holdings. UniverseSettings:" +
-                        $" Resolution = {resolution}; Leverage = {leverage}; FillForward = {fillForward}; ExtendedHours = {extendedHours}");
-                }
-
-                Log.Trace("BrokerageSetupHandler.Setup(): Adding unrequested security: " + symbol.Value);
-
-                if (symbol.SecurityType.IsOption())
-                {
-                    // add current option contract to the system
-                    security = algorithm.AddOptionContract(symbol, resolution, fillForward, leverage, extendedHours);
-                }
-                else if (symbol.SecurityType == SecurityType.Future)
-                {
-                    // add current future contract to the system
-                    security = algorithm.AddFutureContract(symbol, resolution, fillForward, leverage, extendedHours);
-                }
-                else
-                {
-                    // for items not directly requested set leverage to 1 and at the min resolution
-                    security = algorithm.AddSecurity(symbol.SecurityType, symbol.Value, resolution, symbol.ID.Market, fillForward, leverage, extendedHours);
-                }
-            }
-            return security;
+            return algorithm.GetOrAddUnrequestedSecurity(symbol, out security,
+                onError: (supportedSecurityTypes) => AddInitializationError(
+                    "Found unsupported security type in existing brokerage holdings: " + securityType + ". " +
+                    "QuantConnect currently supports the following security types: " + string.Join(",", supportedSecurityTypes)));
         }
 
         /// <summary>
@@ -516,9 +470,7 @@ namespace QuantConnect.Lean.Engine.Setup
         /// <param name="resultHandler">The configured result handler</param>
         /// <param name="transactionHandler">The configurated transaction handler</param>
         /// <param name="brokerage">Brokerage output instance</param>
-        /// <param name="supportedSecurityTypes">The list of supported security types</param>
-        protected void GetOpenOrders(IAlgorithm algorithm, IResultHandler resultHandler, ITransactionHandler transactionHandler, IBrokerage brokerage,
-            HashSet<SecurityType> supportedSecurityTypes)
+        protected void GetOpenOrders(IAlgorithm algorithm, IResultHandler resultHandler, ITransactionHandler transactionHandler, IBrokerage brokerage)
         {
             // populate the algorithm with the account's outstanding orders
             var openOrders = brokerage.GetOpenOrders();
@@ -526,26 +478,18 @@ namespace QuantConnect.Lean.Engine.Setup
             // add options first to ensure raw data normalization mode is set on the equity underlyings
             foreach (var order in openOrders.OrderByDescending(x => x.SecurityType))
             {
-                // be sure to assign order IDs such that we increment from the SecurityTransactionManager to avoid ID collisions
-                order.Id = algorithm.Transactions.GetIncrementOrderId();
+                // verify existing holding security type
+                Security security;
+                if (!GetOrAddUnrequestedSecurity(algorithm, order.Symbol, order.SecurityType, out security))
+                {
+                    continue;
+                }
+
+                transactionHandler.AddOpenOrder(order, algorithm);
+                order.PriceCurrency = security?.SymbolProperties.QuoteCurrency;
 
                 Log.Trace($"BrokerageSetupHandler.Setup(): Has open order: {order}");
                 resultHandler.DebugMessage($"BrokerageSetupHandler.Setup(): Open order detected.  Creating order tickets for open order {order.Symbol.Value} with quantity {order.Quantity}. Beware that this order ticket may not accurately reflect the quantity of the order if the open order is partially filled.");
-
-                transactionHandler.AddOpenOrder(order, order.ToOrderTicket(algorithm.Transactions));
-
-                // verify existing holding security type
-                if (!supportedSecurityTypes.Contains(order.SecurityType))
-                {
-                    Log.Error("BrokerageSetupHandler.Setup(): Unsupported security type: " + order.SecurityType + "-" + order.Symbol.Value);
-                    AddInitializationError("Found unsupported security type in existing brokerage open orders: " + order.SecurityType + ". " +
-                                           "QuantConnect currently supports the following security types: " + string.Join(",", supportedSecurityTypes));
-
-                    // keep aggregating these errors
-                    continue;
-                }
-                var security = AddUnrequestedSecurity(algorithm, order.Symbol);
-                order.PriceCurrency = security?.SymbolProperties.QuoteCurrency;
             }
         }
 

@@ -43,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -67,7 +67,7 @@ namespace QuantConnect.Algorithm.CSharp
                     || addedSecurity.Open == 0
                     || addedSecurity.Close == 0)
                 {
-                    throw new Exception($"Security {addedSecurity.Symbol} was not warmed up!");
+                    throw new RegressionTestException($"Security {addedSecurity.Symbol} was not warmed up!");
                 }
             }
         }
@@ -80,7 +80,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -90,21 +90,29 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 20;
+        public int AlgorithmHistoryDataPoints => 10;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "307.471%"},
             {"Drawdown", "1.700%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101031.62"},
             {"Net Profit", "1.032%"},
-            {"Sharpe Ratio", "66.294"},
+            {"Sharpe Ratio", "66.263"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -115,30 +123,12 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.058"},
             {"Information Ratio", "-198.985"},
             {"Tracking Error", "0.001"},
-            {"Treynor Ratio", "16.09"},
+            {"Treynor Ratio", "16.083"},
             {"Total Fees", "$3.44"},
             {"Estimated Strategy Capacity", "$31000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Fitness Score", "0.253"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-17.011"},
-            {"Portfolio Turnover", "0.503"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "3a2302b5888ad1a0d1749e427f37d1aa"}
+            {"Portfolio Turnover", "33.62%"},
+            {"OrderListHash", "00636a25aed88acd2171c6221c747716"}
         };
     }
 }

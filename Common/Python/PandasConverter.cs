@@ -33,19 +33,16 @@ namespace QuantConnect.Python
         private static PyObject _concat;
 
         /// <summary>
-        /// Creates an instance of <see cref="PandasConverter"/>.
+        /// Initializes the <see cref="PandasConverter"/> class
         /// </summary>
-        public PandasConverter()
+        static PandasConverter()
         {
-            if (_pandas == null)
+            using (Py.GIL())
             {
-                using (Py.GIL())
-                {
-                    var pandas = Py.Import("pandas");
-                    _pandas = pandas;
-                    // keep it so we don't need to ask for it each time
-                    _concat = pandas.GetAttr("concat");
-                }
+                var pandas = Py.Import("pandas");
+                _pandas = pandas;
+                // keep it so we don't need to ask for it each time
+                _concat = pandas.GetAttr("concat");
             }
         }
 
@@ -58,67 +55,50 @@ namespace QuantConnect.Python
         public PyObject GetDataFrame(IEnumerable<Slice> data, Type dataType = null)
         {
             var maxLevels = 0;
-            var sliceDataDict = new Dictionary<Symbol, PandasData>();
+            var sliceDataDict = new Dictionary<SecurityIdentifier, PandasData>();
+
+            // if no data type is requested we check all
+            var requestedTick = dataType == null || dataType == typeof(Tick) || dataType == typeof(OpenInterest);
+            var requestedTradeBar = dataType == null || dataType == typeof(TradeBar);
+            var requestedQuoteBar = dataType == null || dataType == typeof(QuoteBar);
 
             foreach (var slice in data)
             {
-                if (dataType == null)
-                {
-                    AddSliceDataToDict(slice, sliceDataDict, ref maxLevels);
-                }
-                else
-                {
-                    AddSliceDataTypeDataToDict(slice, dataType, sliceDataDict, ref maxLevels);
-                }
+                AddSliceDataTypeDataToDict(slice, requestedTick, requestedTradeBar, requestedQuoteBar, sliceDataDict, ref maxLevels, dataType);
             }
 
-            using (Py.GIL())
-            {
-                if (sliceDataDict.Count == 0)
-                {
-                    return _pandas.DataFrame();
-                }
-                using var dataFrames = sliceDataDict.Select(x => x.Value.ToPandasDataFrame(maxLevels)).ToPyList();
-                using var sortDic = Py.kw("sort", true);
-                var result = _concat.Invoke(new[] { dataFrames }, sortDic);
-
-                foreach (var df in dataFrames)
-                {
-                    df.Dispose();
-                }
-                return result;
-            }
+            return CreateDataFrame(sliceDataDict, maxLevels);
         }
 
         /// <summary>
         /// Converts an enumerable of <see cref="IBaseData"/> in a pandas.DataFrame
         /// </summary>
         /// <param name="data">Enumerable of <see cref="Slice"/></param>
+        /// <param name="symbolOnlyIndex">Whether to make the index only the symbol, without time or any other index levels</param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
-        public PyObject GetDataFrame<T>(IEnumerable<T> data)
-            where T : IBaseData
+        /// <remarks>Helper method for testing</remarks>
+        public PyObject GetDataFrame<T>(IEnumerable<T> data, bool symbolOnlyIndex = false)
+            where T : ISymbolProvider
         {
-            PandasData sliceData = null;
+            var pandasDataBySymbol = new Dictionary<SecurityIdentifier, PandasData>();
+            var maxLevels = 0;
             foreach (var datum in data)
             {
-                if (sliceData == null)
-                {
-                    sliceData = new PandasData(datum);
-                }
-
-                sliceData.Add(datum);
+                var pandasData = GetPandasDataValue(pandasDataBySymbol, datum.Symbol, datum, ref maxLevels);
+                pandasData.Add(datum);
             }
 
-            using (Py.GIL())
+            if (symbolOnlyIndex)
             {
-                // If sliceData is still null, data is an empty enumerable
-                // returns an empty pandas.DataFrame
-                if (sliceData == null)
-                {
-                    return _pandas.DataFrame();
-                }
-                return sliceData.ToPandasDataFrame();
+                return PandasData.ToPandasDataFrame(pandasDataBySymbol.Values);
             }
+            return CreateDataFrame(pandasDataBySymbol,
+                // Use 2 instead of maxLevels for backwards compatibility
+                maxLevels: symbolOnlyIndex ? 1 : 2,
+                sort: false,
+                // Multiple data frames (one for each symbol) will be concatenated,
+                // so make sure rows with missing values only are not filtered out before concatenation
+                filterMissingValueColumns: pandasDataBySymbol.Count <= 1);
         }
 
         /// <summary>
@@ -126,7 +106,7 @@ namespace QuantConnect.Python
         /// </summary>
         /// <param name="data">Dictionary with a list of <see cref="IndicatorDataPoint"/></param>
         /// <returns><see cref="PyObject"/> containing a pandas.DataFrame</returns>
-        public PyObject GetIndicatorDataFrame(IDictionary<string, List<IndicatorDataPoint>> data)
+        public PyObject GetIndicatorDataFrame(IEnumerable<KeyValuePair<string, List<IndicatorDataPoint>>> data)
         {
             using (Py.GIL())
             {
@@ -177,10 +157,7 @@ namespace QuantConnect.Python
                         inputTypeStr = $"{currentKvp[0].GetPythonType()}: {currentKvp[1].GetPythonType()}";
                     }
 
-                    throw new ArgumentException(
-                        $"ConvertToDictionary cannot be used to convert a {inputTypeStr} into {targetTypeStr}. Reason: {e.Message}",
-                        e
-                    );
+                    throw new ArgumentException(Messages.PandasConverter.ConvertToDictionaryFailed(inputTypeStr, targetTypeStr, e.Message), e);
                 }
             }
         }
@@ -191,9 +168,92 @@ namespace QuantConnect.Python
         /// <returns></returns>
         public override string ToString()
         {
-            return _pandas == null
-                ? "pandas module was not imported."
-                : _pandas.Repr();
+            if (_pandas == null)
+            {
+                return Messages.PandasConverter.PandasModuleNotImported;
+            }
+
+            using (Py.GIL())
+            {
+                return _pandas.Repr();
+            }
+        }
+
+        /// <summary>
+        /// Create a data frame by concatenated the resulting data frames from the given data
+        /// </summary>
+        private static PyObject CreateDataFrame(Dictionary<SecurityIdentifier, PandasData> dataBySymbol, int maxLevels = 2, bool sort = true,
+            bool filterMissingValueColumns = true)
+        {
+            using (Py.GIL())
+            {
+                if (dataBySymbol.Count == 0)
+                {
+                    return _pandas.DataFrame();
+                }
+
+                var dataFrames = dataBySymbol.Select(x => x.Value.ToPandasDataFrame(maxLevels, filterMissingValueColumns));
+                var result = ConcatDataFrames(dataFrames, sort: sort, dropna: true);
+
+                foreach (var df in dataFrames)
+                {
+                    df.Dispose();
+                }
+
+                return result;
+            }
+        }
+
+        /// <summary>
+        /// Concatenates multiple data frames
+        /// </summary>
+        /// <param name="dataFrames">The data frames to concatenate</param>
+        /// <param name="keys">
+        /// Optional new keys for a new multi-index level that would be added
+        /// to index each individual data frame in the resulting one
+        /// </param>
+        /// <param name="names">The optional names of the new index level (and the existing ones if they need to be changed)</param>
+        /// <param name="sort">Whether to sort the resulting data frame</param>
+        /// <param name="dropna">Whether to drop columns containing NA values only (Nan, None, etc)</param>
+        /// <returns>A new data frame result from concatenating the input</returns>
+        public static PyObject ConcatDataFrames(IEnumerable<PyObject> dataFrames, IEnumerable<object> keys = null, IEnumerable<string> names = null,
+            bool sort = true, bool dropna = true)
+        {
+            using (Py.GIL())
+            {
+                var dataFramesList = dataFrames.ToList();
+                if (dataFramesList.Count == 0)
+                {
+                    return _pandas.DataFrame();
+                }
+
+                using var pyDataFrames = dataFramesList.ToPyListUnSafe();
+                using var kwargs = Py.kw("sort", sort);
+                PyList pyKeys = null;
+                PyList pyNames = null;
+
+                if (keys != null && names != null)
+                {
+                    pyKeys = keys.ToPyListUnSafe();
+                    pyNames = names.ToPyListUnSafe();
+                    kwargs.SetItem("keys", pyKeys);
+                    kwargs.SetItem("names", pyNames);
+                }
+
+                var result = _concat.Invoke(new[] { pyDataFrames }, kwargs);
+
+                // Drop columns with only NaN or None values
+                if (dropna)
+                {
+                    using var dropnaKwargs = Py.kw("axis", 1, "inplace", true, "how", "all");
+                    result.GetAttr("dropna").Invoke(Array.Empty<PyObject>(), dropnaKwargs);
+                }
+
+                pyKeys?.Dispose();
+                pyNames?.Dispose();
+
+                return result;
+            }
         }
 
         /// <summary>
@@ -230,12 +290,12 @@ namespace QuantConnect.Python
         /// Gets the <see cref="PandasData"/> for the given symbol if it exists in the dictionary, otherwise it creates a new instance with the
         /// given base data and adds it to the dictionary
         /// </summary>
-        private PandasData GetPandasDataValue(IDictionary<Symbol, PandasData> sliceDataDict, Symbol symbol, object data, ref int maxLevels)
+        private PandasData GetPandasDataValue(IDictionary<SecurityIdentifier, PandasData> sliceDataDict, Symbol symbol, object data, ref int maxLevels)
         {
             PandasData value;
-            if (!sliceDataDict.TryGetValue(symbol, out value))
+            if (!sliceDataDict.TryGetValue(symbol.ID, out value))
             {
-                sliceDataDict.Add(symbol, value = new PandasData(data));
+                sliceDataDict[symbol.ID] = value = new PandasData(data);
                 maxLevels = Math.Max(maxLevels, value.Levels);
             }
 
@@ -243,42 +303,16 @@ namespace QuantConnect.Python
         }
 
         /// <summary>
-        /// Adds each slice data to the pandas data dictionary
-        /// </summary>
-        private void AddSliceDataToDict(Slice slice, IDictionary<Symbol, PandasData> sliceDataDict, ref int maxLevels)
-        {
-            foreach (var key in slice.Keys)
-            {
-                var baseData = slice[key];
-                var value = GetPandasDataValue(sliceDataDict, key, baseData, ref maxLevels);
-
-                if (value.IsCustomData)
-                {
-                    value.Add(baseData);
-                }
-                else
-                {
-                    var ticks = slice.Ticks.ContainsKey(key) ? slice.Ticks[key] : null;
-                    var tradeBars = slice.Bars.ContainsKey(key) ? slice.Bars[key] : null;
-                    var quoteBars = slice.QuoteBars.ContainsKey(key) ? slice.QuoteBars[key] : null;
-                    value.Add(ticks, tradeBars, quoteBars);
-                }
-            }
-        }
-
-        /// <summary>
         /// Adds each slice data corresponding to the requested data type to the pandas data dictionary
         /// </summary>
-        private void AddSliceDataTypeDataToDict(Slice slice, Type dataType, IDictionary<Symbol, PandasData> sliceDataDict, ref int maxLevels)
+        private void AddSliceDataTypeDataToDict(Slice slice, bool requestedTick, bool requestedTradeBar, bool requestedQuoteBar, IDictionary<SecurityIdentifier, PandasData> sliceDataDict, ref int maxLevels, Type dataType = null)
         {
-            var isTick = dataType == typeof(Tick) || dataType == typeof(OpenInterest);
-            // Access ticks directly since slice.Get(typeof(Tick)) and slice.Get(typeof(OpenInterest)) will return only the last tick
-            var sliceData = isTick ? slice.Ticks : slice.Get(dataType);
+            HashSet<SecurityIdentifier> _addedData = null;
 
-            foreach (var key in sliceData.Keys)
+            for (int i = 0; i < slice.AllData.Count; i++)
             {
-                var baseData = sliceData[key];
-                PandasData value = GetPandasDataValue(sliceDataDict, key, baseData, ref maxLevels);
+                var baseData = slice.AllData[i];
+                var value = GetPandasDataValue(sliceDataDict, baseData.Symbol, baseData, ref maxLevels);
 
                 if (value.IsCustomData)
                 {
@@ -286,10 +320,47 @@ namespace QuantConnect.Python
                 }
                 else
                 {
-                    var ticks = isTick ? baseData : null;
-                    var tradeBars = dataType == typeof(TradeBar) ? baseData : null;
-                    var quoteBars = dataType == typeof(QuoteBar) ? baseData : null;
-                    value.Add(ticks, tradeBars, quoteBars);
+                    var tick = requestedTick ? baseData as Tick : null;
+                    if(tick == null)
+                    {
+                        if (!requestedTradeBar && !requestedQuoteBar && dataType != null && baseData.GetType().IsAssignableTo(dataType))
+                        {
+                            // support for auxiliary data history requests
+                            value.Add(baseData);
+                            continue;
+                        }
+
+                        // we add both quote and trade bars for each symbol at the same time, because they share the row in the data frame else it will generate 2 rows per series
+                        if (requestedTradeBar && requestedQuoteBar)
+                        {
+                            _addedData ??= new();
+                            if (!_addedData.Add(baseData.Symbol.ID))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // the slice already has the data organized by symbol so let's take advantage of it using Bars/QuoteBars collections
+                        QuoteBar quoteBar = null;
+                        var tradeBar = requestedTradeBar ? baseData as TradeBar : null;
+                        if (tradeBar != null)
+                        {
+                            slice.QuoteBars.TryGetValue(tradeBar.Symbol, out quoteBar);
+                        }
+                        else
+                        {
+                            quoteBar = requestedQuoteBar ? baseData as QuoteBar : null;
+                            if (quoteBar != null)
+                            {
+                                slice.Bars.TryGetValue(quoteBar.Symbol, out tradeBar);
+                            }
+                        }
+                        value.Add(tradeBar, quoteBar);
+                    }
+                    else
+                    {
+                        value.AddTick(tick);
+                    }
                 }
             }
         }

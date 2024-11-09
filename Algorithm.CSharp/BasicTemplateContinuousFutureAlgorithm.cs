@@ -51,7 +51,7 @@ namespace QuantConnect.Algorithm.CSharp
                 contractDepthOffset: 0
             );
 
-            _fast = SMA(_continuousContract.Symbol, 3, Resolution.Daily);
+            _fast = SMA(_continuousContract.Symbol, 4, Resolution.Daily);
             _slow = SMA(_continuousContract.Symbol, 10, Resolution.Daily);
         }
 
@@ -59,14 +59,14 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            foreach (var changedEvent in data.SymbolChangedEvents.Values)
+            foreach (var changedEvent in slice.SymbolChangedEvents.Values)
             {
                 Debug($"{Time} - SymbolChanged event: {changedEvent}");
                 if (Time.TimeOfDay != TimeSpan.Zero)
                 {
-                    throw new Exception($"{Time} unexpected symbol changed event {changedEvent}!");
+                    throw new RegressionTestException($"{Time} unexpected symbol changed event {changedEvent}!");
                 }
             }
 
@@ -113,12 +113,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 284403;
+        public long DataPoints => 713371;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -126,52 +126,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
-            {"Average Win", "0%"},
-            {"Average Loss", "-0.02%"},
-            {"Compounding Annual Return", "-0.033%"},
-            {"Drawdown", "0.000%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "-0.017%"},
-            {"Sharpe Ratio", "-1.173"},
-            {"Probabilistic Sharpe Ratio", "0.011%"},
-            {"Loss Rate", "100%"},
-            {"Win Rate", "0%"},
+            {"Total Orders", "5"},
+            {"Average Win", "2.48%"},
+            {"Average Loss", "0%"},
+            {"Compounding Annual Return", "11.325%"},
+            {"Drawdown", "1.500%"},
+            {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "105549.6"},
+            {"Net Profit", "5.550%"},
+            {"Sharpe Ratio", "1.332"},
+            {"Sortino Ratio", "879.904"},
+            {"Probabilistic Sharpe Ratio", "79.894%"},
+            {"Loss Rate", "0%"},
+            {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0"},
-            {"Beta", "-0"},
-            {"Annual Standard Deviation", "0"},
-            {"Annual Variance", "0"},
-            {"Information Ratio", "-2.752"},
-            {"Tracking Error", "0.082"},
-            {"Treynor Ratio", "1.883"},
-            {"Total Fees", "$4.30"},
-            {"Estimated Strategy Capacity", "$0"},
+            {"Alpha", "0.075"},
+            {"Beta", "-0.017"},
+            {"Annual Standard Deviation", "0.053"},
+            {"Annual Variance", "0.003"},
+            {"Information Ratio", "-1.48"},
+            {"Tracking Error", "0.099"},
+            {"Treynor Ratio", "-4.187"},
+            {"Total Fees", "$10.75"},
+            {"Estimated Strategy Capacity", "$7100000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.006"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-1.993"},
-            {"Portfolio Turnover", "0.01"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "1fd4b49e9450800981c6dead2bbca995"}
+            {"Portfolio Turnover", "2.33%"},
+            {"OrderListHash", "9c524830ffc7354327638142ae62acd2"}
         };
     }
 }

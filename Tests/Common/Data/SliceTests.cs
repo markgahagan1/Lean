@@ -44,8 +44,9 @@ namespace QuantConnect.Tests.Common.Data
             var openInterest = new OpenInterest(now, Symbols.SPY, 1);
             var split = new Split(Symbols.SPY, now, 1, 1, SplitType.SplitOccurred);
             var delisting = new Delisting(Symbols.SPY, now, 1, DelistingType.Delisted);
+            var marginInterest = new MarginInterestRate { Symbol = Symbols.SPY, Time = now, InterestRate = 0.08m };
 
-            var slice = new Slice(now, new BaseData[] { quoteBar, tradeBar, unlinkedData, tick, split, delisting, openInterest }, now);
+            var slice = new Slice(now, new BaseData[] { quoteBar, tradeBar, unlinkedData, tick, split, delisting, openInterest, marginInterest }, now);
 
             Assert.AreEqual(slice.Get(typeof(TradeBar))[Symbols.SPY], tradeBar);
             Assert.AreEqual(slice.Get(typeof(UnlinkedData))[Symbols.SPY], unlinkedData);
@@ -54,6 +55,65 @@ namespace QuantConnect.Tests.Common.Data
             Assert.AreEqual(slice.Get(typeof(Split))[Symbols.SPY], split);
             Assert.AreEqual(slice.Get(typeof(Delisting))[Symbols.SPY], delisting);
             Assert.AreEqual(slice.Get(typeof(OpenInterest))[Symbols.SPY], openInterest);
+            Assert.AreEqual(slice.Get(typeof(MarginInterestRate))[Symbols.SPY], marginInterest);
+        }
+
+        [Test]
+        public void AccessesByDataTypeAndSymbol()
+        {
+            var now = DateTime.UtcNow;
+            var tradeBar = new TradeBar { Symbol = Symbols.SPY, Time = now };
+            var unlinkedData = new UnlinkedData { Symbol = Symbols.SPY, Time = now };
+            var quoteBar = new QuoteBar { Symbol = Symbols.SPY, Time = now };
+            var tick = new Tick(now, Symbols.SPY, 1.1m, 2.1m) { TickType = TickType.Trade };
+            var openInterest = new OpenInterest(now, Symbols.SPY, 1);
+            var split = new Split(Symbols.SPY, now, 1, 1, SplitType.SplitOccurred);
+            var delisting = new Delisting(Symbols.SPY, now, 1, DelistingType.Delisted);
+            var marginInterest = new MarginInterestRate { Symbol = Symbols.SPY, Time = now, InterestRate = 0.08m };
+
+            var slice = new Slice(now, new BaseData[] { quoteBar, tradeBar, unlinkedData, tick, split, delisting, openInterest, marginInterest }, now);
+
+            {
+                Assert.IsTrue(slice.TryGet<TradeBar>(Symbols.SPY, out var foundTradeBar));
+                Assert.AreEqual(foundTradeBar, tradeBar);
+                Assert.IsTrue(slice.TryGet<UnlinkedData>(Symbols.SPY, out var foundUnlinkedData));
+                Assert.AreEqual(foundUnlinkedData, unlinkedData);
+                Assert.IsTrue(slice.TryGet<QuoteBar>(Symbols.SPY, out var foundQuoteBar));
+                Assert.AreEqual(foundQuoteBar, quoteBar);
+                Assert.IsTrue(slice.TryGet<Tick>(Symbols.SPY, out var foundTick));
+                Assert.AreEqual(foundTick, tick);
+                Assert.IsTrue(slice.TryGet<Split>(Symbols.SPY, out var foundSplit));
+                Assert.AreEqual(foundSplit, split);
+                Assert.IsTrue(slice.TryGet<Delisting>(Symbols.SPY, out var foundDelisting));
+                Assert.AreEqual(foundDelisting, delisting);
+                Assert.IsTrue(slice.TryGet<OpenInterest>(Symbols.SPY, out var foundOpenInterest));
+                Assert.AreEqual(foundOpenInterest, openInterest);
+                Assert.IsTrue(slice.TryGet<MarginInterestRate>(Symbols.SPY, out var foundMarginInterest));
+                Assert.AreEqual(foundMarginInterest, marginInterest);
+
+                Assert.IsFalse(slice.TryGet<TradeBar>(Symbols.AAPL, out _));
+            }
+
+            {
+                Assert.IsTrue(slice.TryGet(typeof(TradeBar), Symbols.SPY, out var foundTradeBar));
+                Assert.AreEqual(foundTradeBar, tradeBar);
+                Assert.IsTrue(slice.TryGet(typeof(UnlinkedData), Symbols.SPY, out var foundUnlinkedData));
+                Assert.AreEqual(foundUnlinkedData, unlinkedData);
+                Assert.IsTrue(slice.TryGet(typeof(QuoteBar), Symbols.SPY, out var foundQuoteBar));
+                Assert.AreEqual(foundQuoteBar, quoteBar);
+                Assert.IsTrue(slice.TryGet(typeof(Tick), Symbols.SPY, out var foundTick));
+                Assert.AreEqual(foundTick, tick);
+                Assert.IsTrue(slice.TryGet(typeof(Split), Symbols.SPY, out var foundSplit));
+                Assert.AreEqual(foundSplit, split);
+                Assert.IsTrue(slice.TryGet(typeof(Delisting), Symbols.SPY, out var foundDelisting));
+                Assert.AreEqual(foundDelisting, delisting);
+                Assert.IsTrue(slice.TryGet(typeof(OpenInterest), Symbols.SPY, out var foundOpenInterest));
+                Assert.AreEqual(foundOpenInterest, openInterest);
+                Assert.IsTrue(slice.TryGet(typeof(MarginInterestRate), Symbols.SPY, out var foundMarginInterest));
+                Assert.AreEqual(foundMarginInterest, marginInterest);
+
+                Assert.IsFalse(slice.TryGet(typeof(TradeBar), Symbols.AAPL, out _));
+            }
         }
 
         [Test]
@@ -221,8 +281,9 @@ namespace QuantConnect.Tests.Common.Data
             var dividend1 = new Dividend(Symbols.SPY, _dataTime, 1, 1);
             var delisting1 = new Delisting(Symbols.SPY, _dataTime, 1, DelistingType.Delisted);
             var symbolChangedEvent1 = new SymbolChangedEvent(Symbols.SPY, _dataTime, "SPY", "SP");
+            var marginInterestRate1 = new MarginInterestRate { Time = _dataTime, Symbol = Symbols.SPY, InterestRate = 8 };
             var slice1 = new Slice(_dataTime, new BaseData[] { tradeBar1, tradeBar2,
-                quoteBar1, tick1, split1, dividend1, delisting1, symbolChangedEvent1
+                quoteBar1, tick1, split1, dividend1, delisting1, symbolChangedEvent1, marginInterestRate1
             }, _dataTime);
 
             var tradeBar3 = new TradeBar { Symbol = Symbols.AAPL, Time = _dataTime, Open = 24 };
@@ -234,8 +295,9 @@ namespace QuantConnect.Tests.Common.Data
             var dividend2 = new Dividend(Symbols.SBIN, _dataTime, 1, 1);
             var delisting2 = new Delisting(Symbols.SBIN, _dataTime, 1, DelistingType.Delisted);
             var symbolChangedEvent2 = new SymbolChangedEvent(Symbols.SBIN, _dataTime, "SBIN", "BIN");
+            var marginInterestRate2 = new MarginInterestRate { Time = _dataTime, Symbol = Symbols.SBIN, InterestRate = 18 };
             var slice2 = new Slice(_dataTime, new BaseData[] { tradeBar3, tradeBar4, tradeBar3_4,
-                quoteBar2, tick2, split2, dividend2, delisting2, symbolChangedEvent2
+                quoteBar2, tick2, split2, dividend2, delisting2, symbolChangedEvent2, marginInterestRate2
             }, _dataTime);
 
             slice1.MergeSlice(slice2);
@@ -246,6 +308,7 @@ namespace QuantConnect.Tests.Common.Data
             Assert.AreEqual(2, slice1.Dividends.Count);
             Assert.AreEqual(2, slice1.Delistings.Count);
             Assert.AreEqual(2, slice1.SymbolChangedEvents.Count);
+            Assert.AreEqual(2, slice1.MarginInterestRates.Count);
         }
 
         [Test]
@@ -284,7 +347,7 @@ namespace QuantConnect.Tests.Common.Data
             var slice1 = new Slice(_dataTime, new BaseData[] { tradeBar1, tick1 }, _dataTime);
             //var Use List<tick>
             var ticks = new Ticks { { Symbols.MSFT, new List<Tick> { tick1 } } };
-            var slice2 = new Slice(_dataTime, new List<BaseData>(), null, null, ticks, null, null, null, null, null, null, _dataTime);
+            var slice2 = new Slice(_dataTime, new List<BaseData>(), null, null, ticks, null, null, null, null, null, null, null, _dataTime);
             slice1.MergeSlice(slice2);
             Assert.AreEqual(2, slice1.Ticks.Count);
 
@@ -293,6 +356,15 @@ namespace QuantConnect.Tests.Common.Data
             var slice3 = new Slice(_dataTime, new BaseData[] { tradeBar1, tick2 }, _dataTime);
             slice2.MergeSlice(slice3);
             Assert.AreEqual(1, slice2.Ticks.Count);
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        public void AccessingTicksParsedSaleConditinoDoesNotThrow(string saleCondition)
+        {
+            var tick1 = new Tick(_dataTime, Symbols.SPY, 1.1m, 2.1m) { TickType = TickType.Trade };
+            tick1.SaleCondition = saleCondition;
+            Assert.DoesNotThrow(() => tick1.ParsedSaleCondition.ToString());
         }
 
         [Test]
@@ -312,13 +384,13 @@ namespace QuantConnect.Tests.Common.Data
                                 new Ticks(), optionChain1,
                                 futuresChain1, new Splits(),
                                 new Dividends(_dataTime), new Delistings(),
-                                new SymbolChangedEvents(), _dataTime);
+                                new SymbolChangedEvents(), new MarginInterestRates(), _dataTime);
             var slice5 = new Slice(_dataTime, new List<BaseData>(),
                 new TradeBars(_dataTime), new QuoteBars(),
                 new Ticks(), optionChain2,
                 futuresChain2, new Splits(),
                 new Dividends(_dataTime), new Delistings(),
-                new SymbolChangedEvents(), _dataTime);
+                new SymbolChangedEvents(), new MarginInterestRates(), _dataTime);
             slice4.MergeSlice(slice5);
             Assert.AreEqual(2, slice4.OptionChains.Count);
             Assert.AreEqual(2, slice4.FutureChains.Count);
@@ -398,36 +470,39 @@ def Test(slice, symbol):
             }
         }
 
-        [Test]
-        public void PythonGetPythonCustomData()
+        [TestCase("reader", "get_source", "get")]
+        [TestCase("Reader", "GetSource", "get")]
+        [TestCase("reader", "get_source", "Get")]
+        [TestCase("Reader", "GetSource", "Get")]
+        public void PythonGetPythonCustomData(string reader, string getSource, string get)
         {
             using (Py.GIL())
             {
                 dynamic testModule = PyModule.FromString("testModule",
-                    @"
+                    $@"
 
 from AlgorithmImports import *
 
 class CustomDataTest(PythonData):
-    def Reader(self, config, line, date, isLiveMode):
+    def {reader}(self, config, line, date, isLiveMode):
         result = CustomDataTest()
         result.Symbol = config.Symbol
         result.Value = 10
         return result
-    def GetSource(config, date, isLiveMode):
+    def {getSource}(config, date, isLiveMode):
         return None
 
 class CustomDataTest2(PythonData):
-    def Reader(self, config, line, date, isLiveMode):
+    def {reader}(self, config, line, date, isLiveMode):
         result = CustomDataTest2()
         result.Symbol = config.Symbol
         result.Value = 11
         return result
-    def GetSource(config, date, isLiveMode):
+    def {getSource}(config, date, isLiveMode):
         return None
 
 def Test(slice):
-    data = slice.Get(CustomDataTest)
+    data = slice.{get}(CustomDataTest)
     return data");
                 var test = testModule.GetAttr("Test");
 
@@ -711,7 +786,9 @@ def Test(slice):
                 new Tick{Time = DateTime.Now, Symbol = Symbols.AAPL, Value = 1.1m, Quantity = 2.1m}
             }, DateTime.Now);
 
+            #pragma warning disable CA1829
             Assert.AreEqual(4, slice.Count());
+            #pragma warning restore CA1829
         }
 
         [Test]
@@ -728,7 +805,7 @@ def Test(slice):
             var tradeBars = new TradeBars { { Symbols.BTCUSD, tradeBar } };
             var quoteBars = new QuoteBars { { Symbols.BTCUSD, quoteBar } };
 
-            var slice = new Slice(DateTime.Now, new List<BaseData>() { tradeBar, quoteBar }, tradeBars, quoteBars, null, null, null, null, null, null, null, DateTime.Now);
+            var slice = new Slice(DateTime.Now, new List<BaseData>() { tradeBar, quoteBar }, tradeBars, quoteBars, null, null, null, null, null, null, null, null, DateTime.Now);
 
             var tradeBarData = slice.Get<TradeBar>();
             Assert.AreEqual(1, tradeBarData.Count);
@@ -763,7 +840,9 @@ from AlgorithmImports import *
 def Test(slice):
     slice.clear()").GetAttr("Test");
 
-                Assert.Throws<InvalidOperationException>(() => test(GetPythonSlice()), "Slice is read-only: cannot clear the collection");
+                Assert.That(() => test(GetPythonSlice()),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<InvalidOperationException>(),
+                    "Slice is read-only: cannot clear the collection");
             }
         }
 
@@ -779,7 +858,9 @@ from AlgorithmImports import *
 def Test(slice):
     slice.popitem()").GetAttr("Test");
 
-                Assert.Throws<NotSupportedException>(() => test(GetPythonSlice()), "Slice is read-only: cannot pop an item from the collection");
+                Assert.That(() => test(GetPythonSlice()),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<NotSupportedException>(),
+                    $"Slice is read-only: cannot pop the value for {Symbols.SPY} from the collection");
             }
         }
 
@@ -795,7 +876,9 @@ from AlgorithmImports import *
 def Test(slice, symbol):
     slice.pop(symbol)").GetAttr("Test");
 
-                Assert.Throws<InvalidOperationException>(() => test(GetPythonSlice(), Symbols.SPY), $"Slice is read-only: cannot pop the value for {Symbols.SPY} from the collection");
+                Assert.That(() => test(GetPythonSlice(), Symbols.SPY),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<InvalidOperationException>(),
+                    $"Slice is read-only: cannot pop the value for {Symbols.SPY} from the collection");
             }
         }
 
@@ -811,7 +894,9 @@ from AlgorithmImports import *
 def Test(slice, symbol, default_value):
     slice.pop(symbol, default_value)").GetAttr("Test");
 
-                Assert.Throws<InvalidOperationException>(() => test(GetPythonSlice(), Symbols.SPY, null), $"Slice is read-only: cannot pop the value for {Symbols.SPY} from the collection");
+                Assert.That(() => test(GetPythonSlice(), Symbols.SPY, null),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<InvalidOperationException>(),
+                    $"Slice is read-only: cannot pop the value for {Symbols.SPY} from the collection");
             }
         }
 
@@ -828,7 +913,9 @@ def Test(slice, symbol):
     item = { symbol: 1 }
     slice.update(item)").GetAttr("Test");
 
-                Assert.Throws<InvalidOperationException>(() => test(GetPythonSlice(), Symbols.SPY), "Slice is read-only: cannot update the collection");
+                Assert.That(() => test(GetPythonSlice(), Symbols.SPY),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<InvalidOperationException>(),
+                    "Slice is read-only: cannot update the collection");
             }
         }
 
@@ -905,7 +992,7 @@ def Test(slice, symbol):
     span2 = (datetime.now()-now).total_seconds()
 
     msg += f'Py: {span1}\nC#: {span2}\nRatio: {span1/span2}'
-    
+
     msg += '\n\n__len__'
 
     if len(slice) > 0:
@@ -939,7 +1026,7 @@ def Test(slice, symbol):
     for i in range(0,1000000):
         result = slice.Keys
     span2 = (datetime.now()-now).total_seconds()
-    
+
     msg += f'Py: {span1}\nC#: {span2}\nRatio: {span1/span2}'
 
     msg += '\n\nvalues()'
@@ -957,7 +1044,7 @@ def Test(slice, symbol):
     for i in range(0,1000000):
         result = slice.Values
     span2 = (datetime.now()-now).total_seconds()
-    
+
     msg += f'Py: {span1}\nC#: {span2}\nRatio: {span1/span2}'
 
     msg += '\n\nget()'
@@ -976,7 +1063,7 @@ def Test(slice, symbol):
     for i in range(0,1000000):
         result = slice.TryGetValue(symbol, dummy)
     span2 = (datetime.now()-now).total_seconds()
-    
+
     msg += f'Py: {span1}\nC#: {span2}\nRatio: {span1/span2}'
 
     msg += '\n\nitems()'
@@ -993,7 +1080,7 @@ def Test(slice, symbol):
     for i in range(0,1000000):
         result = [x for x in slice]
     span2 = (datetime.now()-now).total_seconds()
-    
+
     msg += f'Py: {span1}\nC#: {span2}\nRatio: {span1/span2}'
 
     return msg").GetAttr("Test");
@@ -1273,9 +1360,23 @@ def Test(slice, symbol):
     return slice.setdefault(symbol)").GetAttr("Test");
 
                 var symbol = Symbols.EURUSD;
-                Assert.Throws<KeyNotFoundException>(() => test(GetPythonSlice(), symbol),
+                Assert.That(() => test(GetPythonSlice(), symbol),
+                    Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<KeyNotFoundException>(),
                     $"Slice is read-only: cannot set default value to  for {symbol}");
             }
+        }
+
+        [TestCaseSource(nameof(PushThroughWorksWithDifferentTypesTestCases))]
+        public void PushThroughWorksWithDifferentTypes(Slice slice, Type dataType, decimal expectedValue)
+        {
+            decimal valuePushed = default;
+
+            var action = new Action<IBaseData>(data => { valuePushed = data.Value; });
+
+            var slices = new List<Slice>(){ slice };
+
+            slices.PushThrough(action, dataType);
+            Assert.AreEqual(expectedValue, valuePushed);
         }
 
         private Slice GetSlice()
@@ -1288,15 +1389,93 @@ def Test(slice, symbol):
         }
 
         private PythonSlice GetPythonSlice() => new PythonSlice(GetSlice());
+
+        public static object[] PushThroughWorksWithDifferentTypesTestCases =
+        {
+            new object[] {new Slice(
+                    new DateTime(2013, 10, 3),
+                    new List<BaseData>(),
+                    new TradeBars(),
+                    new QuoteBars() { new QuoteBar() { Symbol = Symbols.IBM, Value = 100m } },
+                    new Ticks(),
+                    new OptionChains(),
+                    new FuturesChains(),
+                    new Splits(),
+                    new Dividends(),
+                    new Delistings(),
+                    new SymbolChangedEvents(),
+                    new MarginInterestRates(),
+                    DateTime.UtcNow), typeof(QuoteBar), 100m},
+            new object[] {new Slice(
+                    new DateTime(2013, 10, 3),
+                    new List<BaseData>(),
+                    new TradeBars() { new TradeBar() { Symbol = Symbols.IBM, Value = 100m } },
+                    new QuoteBars(),
+                    new Ticks(),
+                    new OptionChains(),
+                    new FuturesChains(),
+                    new Splits(),
+                    new Dividends(),
+                    new Delistings(),
+                    new SymbolChangedEvents(),
+                    new MarginInterestRates(),
+                    DateTime.UtcNow), typeof(TradeBar), 100m},
+            new object[] {new Slice(
+                    new DateTime(2013, 10, 3),
+                    new List<BaseData>(),
+                    new TradeBars(),
+                    new QuoteBars(),
+                    new Ticks() { { Symbols.IBM, new Tick() { Value = 100m } } },
+                    new OptionChains(),
+                    new FuturesChains(),
+                    new Splits(),
+                    new Dividends(),
+                    new Delistings(),
+                    new SymbolChangedEvents(),
+                    new MarginInterestRates(),
+                    DateTime.UtcNow), typeof(Tick), 100m},
+            new object[] {new Slice(
+                    new DateTime(2013, 10, 3),
+                    new List<BaseData>() { new TradeBar() { Symbol = Symbols.IBM, Value = 100m } },
+                    new TradeBars(),
+                    new QuoteBars(),
+                    new Ticks(),
+                    new OptionChains(),
+                    new FuturesChains(),
+                    new Splits(),
+                    new Dividends(),
+                    new Delistings(),
+                    new SymbolChangedEvents(),
+                    new MarginInterestRates(),
+                    DateTime.UtcNow), null, 100m},
+            new object[] {new Slice(
+                    new DateTime(2013, 10, 3),
+                    new List<BaseData>() { new CustomData() { Symbol = Symbols.IBM, Value = 100m } },
+                    new TradeBars(),
+                    new QuoteBars(),
+                    new Ticks(),
+                    new OptionChains(),
+                    new FuturesChains(),
+                    new Splits(),
+                    new Dividends(),
+                    new Delistings(),
+                    new SymbolChangedEvents(),
+                    new MarginInterestRates(),
+                    DateTime.UtcNow), typeof(CustomData), 100m}
+        };
     }
 
     public class PublicArrayTest
     {
-        public int[] items;
+        public int[] items { get; set; }
 
         public PublicArrayTest()
         {
             items = new int[5] { 0, 1, 2, 3, 4 };
         }
+    }
+
+    public class CustomData: BaseData
+    {
     }
 }

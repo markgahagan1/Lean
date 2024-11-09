@@ -70,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"{_contractSymbol}: {Securities[_contractSymbol].Invested}");
             if (Securities[_contractSymbol].Invested)
             {
-                throw new Exception($"Position should be closed when {_contractSymbol} got delisted {_contractSymbol.ID.Date}");
+                throw new RegressionTestException($"Position should be closed when {_contractSymbol} got delisted {_contractSymbol.ID.Date}");
             }
         }
 
@@ -87,12 +87,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 398985;
+        public virtual long DataPoints => 525809;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -100,52 +100,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
-            {"Average Win", "1.48%"},
+            {"Total Orders", "2"},
+            {"Average Win", "7.02%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "6.608%"},
-            {"Drawdown", "1.300%"},
+            {"Compounding Annual Return", "34.386%"},
+            {"Drawdown", "1.500%"},
             {"Expectancy", "0"},
-            {"Net Profit", "1.479%"},
-            {"Sharpe Ratio", "2.544"},
-            {"Probabilistic Sharpe Ratio", "96.625%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "107016.6"},
+            {"Net Profit", "7.017%"},
+            {"Sharpe Ratio", "3.217"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "99.828%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.014"},
-            {"Beta", "0.175"},
-            {"Annual Standard Deviation", "0.033"},
-            {"Annual Variance", "0.001"},
-            {"Information Ratio", "-4.246"},
-            {"Tracking Error", "0.075"},
-            {"Treynor Ratio", "0.483"},
+            {"Alpha", "0.228"},
+            {"Beta", "0.108"},
+            {"Annual Standard Deviation", "0.084"},
+            {"Annual Variance", "0.007"},
+            {"Information Ratio", "-1.122"},
+            {"Tracking Error", "0.112"},
+            {"Treynor Ratio", "2.501"},
             {"Total Fees", "$2.15"},
-            {"Estimated Strategy Capacity", "$1800000000.00"},
+            {"Estimated Strategy Capacity", "$1700000000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.022"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "5.652"},
-            {"Portfolio Turnover", "0.023"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "d93bc642994899d48dd9e00232d444bc"}
+            {"Portfolio Turnover", "2.01%"},
+            {"OrderListHash", "640ce720644ff0b580687e80105d0a92"}
         };
     }
 }

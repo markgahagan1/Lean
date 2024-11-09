@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -41,11 +41,13 @@ namespace QuantConnect.Optimizer.Parameters
         [JsonProperty("step")]
         public decimal? Step { get; set; }
 
+        #pragma warning disable CS1574
         /// <summary>
         /// Minimal possible movement for current parameter, should be positive
         /// </summary>
         /// <remarks>Used by <see cref="Strategies.EulerSearchOptimizationStrategy"/> to determine when this parameter can no longer be optimized</remarks>
-        [JsonProperty("min-step")]
+        [JsonProperty("minStep")]
+        #pragma warning restore CS1574
         public decimal? MinStep { get; set; }
 
         /// <summary>
@@ -59,7 +61,7 @@ namespace QuantConnect.Optimizer.Parameters
         {
             if (min > max)
             {
-                throw new ArgumentException($"Minimum value ({min}) should be less or equal than maximum ({max})");
+                throw new ArgumentException(Messages.OptimizationStepParameter.InvalidStepRange(min, max));
             }
 
             MinValue = min;
@@ -92,18 +94,18 @@ namespace QuantConnect.Optimizer.Parameters
             // with zero step algorithm can go to infinite loop, use default step value
             if (step <= 0)
             {
-                throw new ArgumentException($"Step should be positive value; but was {step}");
+                throw new ArgumentException(Messages.OptimizationStepParameter.NonPositiveStepValue(nameof(step), step));
             }
 
-            // EulerSearch algorithm can go to infinite range division if Min step is not provided, use Step as default 
+            // EulerSearch algorithm can go to infinite range division if Min step is not provided, use Step as default
             if (minStep <= 0)
             {
-                throw new ArgumentException($"MinStep should be positive value; but was {minStep}");
+                throw new ArgumentException(Messages.OptimizationStepParameter.NonPositiveStepValue(nameof(minStep), minStep));
             }
 
             if (step < minStep)
             {
-                throw new ArgumentException($"Step should be great or equal than MinStep");
+                throw new ArgumentException(Messages.OptimizationStepParameter.StepLessThanMinStep);
             }
 
             Step = step;

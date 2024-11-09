@@ -35,6 +35,7 @@ using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Orders.Fees;
 using QuantConnect.Tests.Engine.DataFeeds;
+using QuantConnect.Securities.CurrencyConversion;
 
 namespace QuantConnect.Tests.Common.Securities
 {
@@ -100,7 +101,7 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(fills.Count + 1, equity.Count);
 
             // we're going to process fills and very our equity after each fill
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(TimeKeeper);
             subscriptions.SetDataManager(new DataManagerStub(TimeKeeper));
             var securities = new SecurityManager(TimeKeeper);
             MarketHoursDatabase.FromDataFolder().SetEntryAlwaysOpen(CASH.ID.Market, CASH.Value, CASH.SecurityType, TimeZones.NewYork);
@@ -116,7 +117,7 @@ namespace QuantConnect.Tests.Common.Securities
             security.SetLeverage(10m);
             securities.Add(CASH, security);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(equity[0]);
 
             for (int i = 0; i < fills.Count; i++)
@@ -129,7 +130,7 @@ namespace QuantConnect.Tests.Common.Securities
                 // the time doesn't really matter though
                 security.SetMarketPrice(new IndicatorDataPoint(CASH, time, i + 1));
 
-                portfolio.ProcessFill(fill);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
                 Assert.AreEqual(equity[i + 1], portfolio.TotalPortfolioValue, "Failed on " + i);
             }
         }
@@ -173,12 +174,12 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(fills.Count + 1, equity.Count);
 
             // we're going to process fills and very our equity after each fill
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(TimeKeeper);
             var dataManager = new DataManagerStub(TimeKeeper);
             subscriptions.SetDataManager(dataManager);
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(equity[0]);
             portfolio.CashBook.Add("MCH", mchQuantity[0], 0);
             portfolio.CashBook.Add("JWB", jwbQuantity[0], 0);
@@ -190,6 +191,7 @@ namespace QuantConnect.Tests.Common.Securities
             var mchJwbSecurity = new QuantConnect.Securities.Forex.Forex(
                 SecurityExchangeHours,
                 jwbCash,
+                mchCash,
                 subscriptions.Add(MCHJWB, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork),
                 SymbolProperties.GetDefault(jwbCash.Symbol),
                 ErrorCurrencyConverter.Instance,
@@ -199,6 +201,7 @@ namespace QuantConnect.Tests.Common.Securities
             var mchUsdSecurity = new QuantConnect.Securities.Forex.Forex(
                 SecurityExchangeHours,
                 usdCash,
+                mchCash,
                 subscriptions.Add(MCHUSD, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork),
                 SymbolProperties.GetDefault(usdCash.Symbol),
                 ErrorCurrencyConverter.Instance,
@@ -208,6 +211,7 @@ namespace QuantConnect.Tests.Common.Securities
             var usdJwbSecurity = new QuantConnect.Securities.Forex.Forex(
                 SecurityExchangeHours,
                 mchCash,
+                usdCash,
                 subscriptions.Add(USDJWB, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork),
                 SymbolProperties.GetDefault(mchCash.Symbol),
                 ErrorCurrencyConverter.Instance,
@@ -258,7 +262,7 @@ namespace QuantConnect.Tests.Common.Securities
                 usdCash.Update();
                 mchCash.Update();
 
-                portfolio.ProcessFill(fill);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
                 //Console.WriteLine("-----------------------");
                 //Console.WriteLine(fill);
 
@@ -288,7 +292,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(quantity);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -318,7 +322,7 @@ namespace QuantConnect.Tests.Common.Securities
             orderProcessor.AddTicket(new OrderTicket(null, request));
             Assert.AreEqual(portfolio.CashBook[Currencies.USD].Amount, fill.FillPrice*fill.FillQuantity);
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(0, portfolio.MarginRemaining);
             Assert.AreEqual(quantity, portfolio.TotalMarginUsed);
@@ -372,7 +376,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(quantity / leverage + freeCash);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -401,7 +405,7 @@ namespace QuantConnect.Tests.Common.Securities
             request.SetOrderId(0);
             orderProcessor.AddTicket(new OrderTicket(null, request));
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(0 + freeCash, portfolio.MarginRemaining);
             Assert.AreEqual(quantity / leverage, portfolio.TotalMarginUsed);
@@ -433,7 +437,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(quantity / leverage);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -462,7 +466,7 @@ namespace QuantConnect.Tests.Common.Securities
             request.SetOrderId(0);
             orderProcessor.AddTicket(new OrderTicket(null, request));
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(0, portfolio.MarginRemaining);
             Assert.AreEqual(quantity / leverage, portfolio.TotalMarginUsed);
@@ -522,7 +526,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(1000);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -552,7 +556,7 @@ namespace QuantConnect.Tests.Common.Securities
             request.SetOrderId(0);
             orderProcessor.AddTicket(new OrderTicket(null, request));
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(0, portfolio.MarginRemaining);
             Assert.AreEqual( Math.Abs(quantity / leverage), portfolio.TotalMarginUsed);
@@ -570,7 +574,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(1000);
             portfolio.CashBook.Add("EUR",  1000, 1.1m);
             portfolio.CashBook.Add("GBP", -1000, 2.0m);
@@ -601,6 +605,7 @@ namespace QuantConnect.Tests.Common.Securities
                 new QuantConnect.Securities.Forex.Forex(
                     SecurityExchangeHours,
                     usdCash,
+                    eurCash,
                     config2,
                     SymbolProperties.GetDefault(Currencies.USD),
                     ErrorCurrencyConverter.Instance,
@@ -616,6 +621,7 @@ namespace QuantConnect.Tests.Common.Securities
                 new QuantConnect.Securities.Forex.Forex(
                     SecurityExchangeHours,
                     gbpCash,
+                    eurCash,
                     config3,
                     SymbolProperties.GetDefault(gbpCash.Symbol),
                     ErrorCurrencyConverter.Instance,
@@ -645,7 +651,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -662,13 +668,13 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fillBuy = new OrderEvent(1, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 100, 100, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             Assert.AreEqual(0, portfolio.Cash);
             Assert.AreEqual(100, securities[Symbols.Fut_SPY_Feb19_2016].Holdings.Quantity);
 
             var fillSell = new OrderEvent(2, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 100, -100, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             Assert.AreEqual(0, portfolio.Cash);
             Assert.AreEqual(0, securities[Symbols.Fut_SPY_Feb19_2016].Holdings.Quantity);
@@ -679,7 +685,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -696,13 +702,13 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fillBuy = new OrderEvent(1, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 100, 100, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             Assert.AreEqual(0, portfolio.Cash);
             Assert.AreEqual(100, securities[Symbols.Fut_SPY_Feb19_2016].Holdings.Quantity);
 
             var fillSell = new OrderEvent(2, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 99, -100, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             Assert.AreEqual(-100 * 50, portfolio.Cash);
             Assert.AreEqual(0, securities[Symbols.Fut_SPY_Feb19_2016].Holdings.Quantity);
@@ -713,7 +719,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -730,13 +736,13 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fillBuy = new OrderEvent(1, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 100, 100, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             var security = securities[Symbols.Fut_SPY_Feb19_2016];
             Assert.AreEqual(100 * 100 * security.SymbolProperties.ContractMultiplier, security.Holdings.TotalSaleVolume);
 
             var fillSell = new OrderEvent(2, Symbols.Fut_SPY_Feb19_2016, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 100, -100, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             Assert.AreEqual(2 * 100 * 100 * security.SymbolProperties.ContractMultiplier, security.Holdings.TotalSaleVolume);
         }
@@ -746,7 +752,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
             portfolio.SetCash("EUR", 0, 1.10m);
 
@@ -764,13 +770,13 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fillBuy = new OrderEvent(1, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 10000, 5, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             Assert.AreEqual(0, portfolio.Cash);
             Assert.AreEqual(5, securities[Symbols.DE30EUR].Holdings.Quantity);
 
             var fillSell = new OrderEvent(2, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 10000, -5, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             Assert.AreEqual(0, portfolio.Cash);
             Assert.AreEqual(0, securities[Symbols.DE30EUR].Holdings.Quantity);
@@ -781,7 +787,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
             portfolio.SetCash("EUR", 0, 1.10m);
 
@@ -800,7 +806,7 @@ namespace QuantConnect.Tests.Common.Securities
             securities[Symbols.DE30EUR].SettlementModel = new AccountCurrencyImmediateSettlementModel();
 
             var fillBuy = new OrderEvent(1, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 10000, 5, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             Assert.AreEqual(0, portfolio.CashBook["EUR"].Amount);
             Assert.AreEqual(0, portfolio.CashBook["USD"].Amount);
@@ -808,7 +814,7 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(5, securities[Symbols.DE30EUR].Holdings.Quantity);
 
             var fillSell = new OrderEvent(2, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 10100, -5, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             // PNL = (10100 - 10000) * 5 * 1.10 = 550 USD
             Assert.AreEqual(0, portfolio.CashBook["EUR"].Amount);
@@ -822,7 +828,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
             portfolio.SetCash("EUR", 0, 1.10m);
 
@@ -840,13 +846,13 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fillBuy = new OrderEvent(1, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 10000, 5, OrderFee.Zero);
-            portfolio.ProcessFill(fillBuy);
+            portfolio.ProcessFills(new List<OrderEvent> { fillBuy });
 
             // 10000 price * 5 quantity * 1.10 exchange rate = 55000 USD
             Assert.AreEqual(55000, securities[Symbols.DE30EUR].Holdings.TotalSaleVolume);
 
             var fillSell = new OrderEvent(2, Symbols.DE30EUR, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell, 10000, -5, OrderFee.Zero);
-            portfolio.ProcessFill(fillSell);
+            portfolio.ProcessFills(new List<OrderEvent> { fillSell });
 
             // 2 * 10000 price * 5 quantity * 1.10 exchange rate = 110000 USD
             Assert.AreEqual(110000, securities[Symbols.DE30EUR].Holdings.TotalSaleVolume);
@@ -857,7 +863,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -874,7 +880,7 @@ namespace QuantConnect.Tests.Common.Securities
             );
 
             var fill = new OrderEvent(1, Symbols.AAPL, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell,  100, -100, OrderFee.Zero);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(100 * 100, portfolio.Cash);
             Assert.AreEqual(-100, securities[Symbols.AAPL].Holdings.Quantity);
@@ -885,7 +891,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -903,7 +909,7 @@ namespace QuantConnect.Tests.Common.Securities
             securities[Symbols.AAPL].Holdings.SetHoldings(100, 100);
 
             var fill = new OrderEvent(1, Symbols.AAPL, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Sell,  100, -100, OrderFee.Zero);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(100 * 100, portfolio.Cash);
             Assert.AreEqual(0, securities[Symbols.AAPL].Holdings.Quantity);
@@ -914,7 +920,7 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(0);
 
             securities.Add(
@@ -933,7 +939,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             var fill = new OrderEvent(1, Symbols.AAPL, DateTime.MinValue,  OrderStatus.Filled, OrderDirection.Sell,  100, -100, OrderFee.Zero);
             Assert.AreEqual(-100, securities[Symbols.AAPL].Holdings.Quantity);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             Assert.AreEqual(100 * 100, portfolio.Cash);
             Assert.AreEqual(-200, securities[Symbols.AAPL].Holdings.Quantity);
@@ -944,15 +950,16 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(1000);
-            portfolio.CashBook.Add("EUR", 0, 1.1000m);
+            var eurCash = portfolio.CashBook.Add("EUR", 0, 1.1000m);
 
             securities.Add(
                 Symbols.EURUSD,
                 new QuantConnect.Securities.Forex.Forex(
                     SecurityExchangeHours,
                     portfolio.CashBook[Currencies.USD],
+                    eurCash,
                     CreateTradeBarDataConfig(SecurityType.Forex, Symbols.EURUSD),
                     SymbolProperties.GetDefault(Currencies.USD),
                     ErrorCurrencyConverter.Instance,
@@ -966,7 +973,7 @@ namespace QuantConnect.Tests.Common.Securities
             var orderFee = security.FeeModel.GetOrderFee(new OrderFeeParameters(
                 security, new MarketOrder(Symbols.EURUSD, 100, DateTime.MinValue)));
             var fill = new OrderEvent(1, Symbols.EURUSD, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 1.1000m, 100, orderFee);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
             Assert.AreEqual(100, security.Holdings.Quantity);
             Assert.AreEqual(998, portfolio.Cash);
             Assert.AreEqual(100, portfolio.CashBook["EUR"].Amount);
@@ -978,15 +985,16 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(10000);
-            portfolio.CashBook.Add("BTC", 0, 4000.01m);
+            var btcCash = portfolio.CashBook.Add("BTC", 0, 4000.01m);
 
             securities.Add(
                 Symbols.BTCUSD,
                 new QuantConnect.Securities.Crypto.Crypto(
                     SecurityExchangeHours,
                     portfolio.CashBook[Currencies.USD],
+                    btcCash,
                     CreateTradeBarDataConfig(
                         SecurityType.Crypto,
                         Symbols.BTCUSD
@@ -1003,7 +1011,7 @@ namespace QuantConnect.Tests.Common.Securities
             var orderFee = security.FeeModel.GetOrderFee(new OrderFeeParameters(
                 security, new MarketOrder(Symbols.BTCUSD, 2, DateTime.MinValue)));
             var fill = new OrderEvent(1, Symbols.BTCUSD, DateTime.MinValue, OrderStatus.Filled, OrderDirection.Buy, 4000.01m, 2, OrderFee.Zero);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
             Assert.AreEqual(2, security.Holdings.Quantity);
             Assert.AreEqual(10000, portfolio.Cash);
             Assert.AreEqual(2, portfolio.CashBook["BTC"].Amount);
@@ -1016,7 +1024,7 @@ namespace QuantConnect.Tests.Common.Securities
             var securityExchangeHours = SecurityExchangeHoursTests.CreateUsEquitySecurityExchangeHours();
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.SetCash(1000);
             securities.Add(
                 Symbols.AAPL,
@@ -1040,7 +1048,7 @@ namespace QuantConnect.Tests.Common.Securities
             var orderFee = security.FeeModel.GetOrderFee(new OrderFeeParameters(
                 security, new MarketOrder(Symbols.AAPL, 10, timeUtc)));
             var fill = new OrderEvent(1, Symbols.AAPL, timeUtc, OrderStatus.Filled, OrderDirection.Buy, 100, 10, orderFee);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
             Assert.AreEqual(10, security.Holdings.Quantity);            Assert.AreEqual(-1, portfolio.Cash);
             Assert.AreEqual(0, portfolio.UnsettledCash);
 
@@ -1049,14 +1057,14 @@ namespace QuantConnect.Tests.Common.Securities
             orderFee = security.FeeModel.GetOrderFee(new OrderFeeParameters(
                 security, new MarketOrder(Symbols.AAPL, 10, timeUtc)));
             fill = new OrderEvent(2, Symbols.AAPL, timeUtc, OrderStatus.Filled, OrderDirection.Sell, 100, -10, orderFee);
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
             Assert.AreEqual(0, security.Holdings.Quantity);
             Assert.AreEqual(-2, portfolio.Cash);
             Assert.AreEqual(1000, portfolio.UnsettledCash);
 
             // Thursday, still cash unsettled
             timeUtc = timeUtc.AddDays(2);
-            portfolio.ScanForCashSettlement(timeUtc);
+            security.SettlementModel.Scan(new ScanSettlementModelParameters(portfolio, security, timeUtc));
             Assert.AreEqual(-2, portfolio.Cash);
             Assert.AreEqual(1000, portfolio.UnsettledCash);
 
@@ -1064,7 +1072,7 @@ namespace QuantConnect.Tests.Common.Securities
             var marketOpen = securityExchangeHours.MarketHours[timeUtc.DayOfWeek].GetMarketOpen(TimeSpan.Zero, false);
             Assert.IsTrue(marketOpen.HasValue);
             timeUtc = timeUtc.AddDays(1).Date.Add(marketOpen.Value).ConvertToUtc(securityExchangeHours.TimeZone);
-            portfolio.ScanForCashSettlement(timeUtc);
+            security.SettlementModel.Scan(new ScanSettlementModelParameters(portfolio, security, timeUtc));
             Assert.AreEqual(998, portfolio.Cash);
             Assert.AreEqual(0, portfolio.UnsettledCash);
         }
@@ -1079,7 +1087,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(amount);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -1109,7 +1117,7 @@ namespace QuantConnect.Tests.Common.Securities
             request.SetOrderId(0);
             orderProcessor.AddTicket(new OrderTicket(null, request));
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             // we shouldn't be able to place a new buy order
             var newOrder = new MarketOrder(Symbols.AAPL, 1, time.AddSeconds(1)) { Price = buyPrice };
@@ -1148,7 +1156,7 @@ namespace QuantConnect.Tests.Common.Securities
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
             transactions.SetOrderProcessor(orderProcessor);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
             portfolio.CashBook[Currencies.USD].SetAmount(amount);
 
             var config = CreateTradeBarDataConfig(SecurityType.Equity, Symbols.AAPL);
@@ -1178,7 +1186,7 @@ namespace QuantConnect.Tests.Common.Securities
             request.SetOrderId(0);
             orderProcessor.AddTicket(new OrderTicket(null, request));
 
-            portfolio.ProcessFill(fill);
+            portfolio.ProcessFills(new List<OrderEvent> { fill });
 
             // we shouldn't be able to place a new short order
             var newOrder = new MarketOrder(Symbols.AAPL, -1, time.AddSeconds(1)) { Price = sellPrice };
@@ -1214,10 +1222,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // Adding cash: strike price times number of shares
@@ -1260,12 +1269,14 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
             Assert.AreEqual("Option Exercise", fills[1].Message);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // now we have long position in SPY with average price equal to strike
@@ -1285,10 +1296,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             portfolio.SetCash(0);
@@ -1328,12 +1340,15 @@ namespace QuantConnect.Tests.Common.Securities
             var fills = option.OptionExerciseModel.OptionExercise(option, order).ToList();
 
             Assert.AreEqual(1, fills.Count);
-            Assert.AreEqual("OTM", fills[0].Message);
+            StringAssert.Contains("OTM", fills[0].Message);
+            Assert.IsFalse(fills[0].IsInTheMoney);
+            Assert.AreEqual(0, fills[0].FillPrice);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
             // now we have long position in SPY with average price equal to strike
             var newUnderlyingHoldings = securities[Symbols.SPY].Holdings;
@@ -1352,10 +1367,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             portfolio.SetCash(0);
@@ -1396,11 +1412,14 @@ namespace QuantConnect.Tests.Common.Securities
             var fills = option.OptionExerciseModel.OptionExercise(option, order).ToList();
 
             Assert.AreEqual(1, fills.Count);
-            Assert.AreEqual("OTM", fills[0].Message);
+            StringAssert.Contains("OTM", fills[0].Message);
+            Assert.IsFalse(fills[0].IsInTheMoney);
+            Assert.AreEqual(0, fills[0].FillPrice);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // now we have long position in SPY with average price equal to strike
@@ -1420,10 +1439,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
             portfolio.SetCash(0);
 
@@ -1463,12 +1483,14 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
             Assert.AreEqual("Option Exercise", fills[1].Message);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // now we have short position in SPY with average price equal to strike
@@ -1489,10 +1511,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // Adding cash: strike price times number of shares
@@ -1535,12 +1558,14 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
             Assert.AreEqual("Option Exercise", fills[1].Message);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // now we have long position in SPY with average price equal to strike
@@ -1560,10 +1585,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
             portfolio.SetCash(0);
 
@@ -1604,7 +1630,7 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
             Assert.AreEqual("Option Assignment", fills[1].Message);
 
             // we are simulating assignment by calling a method for this
@@ -1612,6 +1638,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -1635,10 +1662,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // Adding cash: strike price times number of shares
@@ -1680,13 +1708,14 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
             Assert.AreEqual("Option Assignment", fills[1].Message);
 
             // we are simulating assignment by calling a method for this
             var portfolioModel = (OptionPortfolioModel)option.PortfolioModel;
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -1708,10 +1737,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // Adding cash: strike price times number of shares
@@ -1753,7 +1783,7 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(2, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
             Assert.AreEqual("Option Assignment", fills[1].Message);
 
             // we are simulating assignment by calling a method for this
@@ -1761,6 +1791,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -1782,10 +1813,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             portfolio.SetCash(0);
@@ -1828,11 +1860,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // (underlying price - strike price) times number of shares
@@ -1850,10 +1884,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             portfolio.SetCash(0);
@@ -1895,12 +1930,16 @@ namespace QuantConnect.Tests.Common.Securities
 
             Assert.AreEqual(1, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
-            Assert.AreEqual("OTM", fills[0].Message);
+            StringAssert.Contains("OTM", fills[0].Message);
+            Assert.IsFalse(fills[0].IsInTheMoney);
+            Assert.AreEqual(0, fills[0].FillPrice);
+            Assert.AreEqual(0, fills[0].FillPrice);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // no cash comes to the account because our contract was OTM
@@ -1918,10 +1957,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
             portfolio.SetCash(0);
 
@@ -1963,11 +2003,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // (strike price - underlying price) times number of shares
@@ -1985,7 +2027,7 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             var time = DateTime.Now;
             algorithm.Securities = securities;
@@ -2049,7 +2091,7 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var orderProcessor = new OrderProcessor();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             var time = DateTime.Now;
             algorithm.Securities = securities;
@@ -2113,10 +2155,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
             portfolio.SetCash(0);
 
@@ -2158,11 +2201,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Exercise", fills[0].Message);
+            StringAssert.Contains("Automatic Exercise", fills[0].Message);
+            Assert.IsTrue(fills[0].IsInTheMoney);
 
             foreach (var fill in fills)
             {
-                portfolio.ProcessFill(fill);
+                fill.Ticket = order.ToOrderTicket(transactions);
+                portfolio.ProcessFills(new List<OrderEvent> { fill });
             }
 
             // (underlying price - strike price) times number of shares
@@ -2180,10 +2225,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // (underlying price - strike price) times number of shares
@@ -2227,12 +2273,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
 
             // we are simulating assignment by calling a method for this
             var portfolioModel = (OptionPortfolioModel)option.PortfolioModel;
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -2252,10 +2299,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             portfolio.SetCash(0);
@@ -2297,7 +2345,9 @@ namespace QuantConnect.Tests.Common.Securities
 
             Assert.AreEqual(1, fills.Count);
             Assert.IsFalse(fills[0].IsAssignment);
-            Assert.AreEqual("OTM", fills[0].Message);
+            StringAssert.Contains("OTM", fills[0].Message);
+            Assert.IsFalse(fills[0].IsInTheMoney);
+            Assert.AreEqual(0, fills[0].FillPrice);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
 
             // we are simulating assignment by calling a method for this
@@ -2305,6 +2355,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -2324,10 +2375,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // (strike price - underlying price) times number of shares
@@ -2371,13 +2423,14 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
 
             // we are simulating assignment by calling a method for this
             var portfolioModel = (OptionPortfolioModel)option.PortfolioModel;
 
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -2397,10 +2450,11 @@ namespace QuantConnect.Tests.Common.Securities
             var securities = new SecurityManager(TimeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
             var transactionHandler = new BacktestingTransactionHandler();
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             algorithm.Securities = securities;
-            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), _resultHandler);
+            using var backtestingBrokerage = new BacktestingBrokerage(algorithm);
+            transactionHandler.Initialize(algorithm, backtestingBrokerage, _resultHandler);
             transactions.SetOrderProcessor(transactionHandler);
 
             // (strike price - underlying price) times number of shares
@@ -2444,12 +2498,13 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(1, fills.Count);
             Assert.IsTrue(fills[0].IsAssignment);
             Assert.AreEqual(order.Quantity, fills[0].FillQuantity);
-            Assert.AreEqual("Automatic Assignment", fills[0].Message);
+            StringAssert.Contains("Automatic Assignment", fills[0].Message);
 
             // we are simulating assignment by calling a method for this
             var portfolioModel = (OptionPortfolioModel)option.PortfolioModel;
             foreach (var fill in fills)
             {
+                fill.Ticket = order.ToOrderTicket(transactions);
                 portfolioModel.ProcessFill(portfolio, option, fill);
             }
 
@@ -2480,6 +2535,7 @@ namespace QuantConnect.Tests.Common.Securities
 
             var split = new Split(Symbols.SPY, new DateTime(2000, 01, 01), 100, 0.5m, SplitType.SplitOccurred);
             algorithm.Portfolio.ApplySplit(split,
+                spy,
                 algorithm.LiveMode,
                 algorithm.SubscriptionManager.SubscriptionDataConfigService
                     .GetSubscriptionDataConfigs(spy.Symbol)
@@ -2513,6 +2569,7 @@ namespace QuantConnect.Tests.Common.Securities
             var leftOver = newQuantity - (int)newQuantity;
 
             algorithm.Portfolio.ApplySplit(split,
+                spy,
                 algorithm.LiveMode,
                 algorithm.SubscriptionManager.SubscriptionDataConfigService
                     .GetSubscriptionDataConfigs(spy.Symbol)
@@ -2524,6 +2581,35 @@ namespace QuantConnect.Tests.Common.Securities
 
             var cashDifference = leftOver * split.Price * split.SplitFactor;
             Assert.AreEqual(initialCash + cashDifference, algorithm.Portfolio.CashBook.TotalValueInAccountCurrency);
+        }
+
+        [Test]
+        public void HoldingsPriceIsUpdatedOnSplit()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+
+            var spy = algorithm.AddEquity("SPY", dataNormalizationMode: DataNormalizationMode.Raw);
+            // Update with both a trade and quote bar
+            spy.SetMarketPrice(new TradeBar(new DateTime(2000, 01, 01), Symbols.SPY, 100m, 100m, 100m, 100m, 100m, Time.OneMinute));
+            spy.SetMarketPrice(new QuoteBar(new DateTime(2000, 01, 01), Symbols.SPY, new Bar(100m, 100m, 100m, 100m), 100m, new Bar(100m, 100m, 100m, 100m), 100m, Time.OneMinute));
+            spy.Holdings.SetHoldings(100m, 100);
+
+            var split = new Split(Symbols.SPY, new DateTime(2000, 01, 01), 100, 0.5m, SplitType.SplitOccurred);
+
+            algorithm.Portfolio.ApplySplit(split,
+                spy,
+                algorithm.LiveMode,
+                algorithm.SubscriptionManager.SubscriptionDataConfigService
+                    .GetSubscriptionDataConfigs(spy.Symbol)
+                    .DataNormalizationMode());
+
+            // confirm the split was properly applied to our holdings
+            Assert.AreEqual(50m, spy.Holdings.AveragePrice);
+            Assert.AreEqual(200, spy.Holdings.Quantity);
+
+            // Market price should have also been updated
+            Assert.AreEqual(50m, spy.Holdings.Price);
         }
 
         [TestCase(DataNormalizationMode.Adjusted)]
@@ -2555,35 +2641,71 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(initialCash, algorithm.Portfolio.CashBook.TotalValueInAccountCurrency);
         }
 
-        [Test]
-        public void SetAccountCurrency()
+        [TestCase(DataNormalizationMode.Adjusted, 200, 0)]
+        [TestCase(DataNormalizationMode.Raw, 100, 100)]
+        [TestCase(DataNormalizationMode.SplitAdjusted, 100, 100)]
+        [TestCase(DataNormalizationMode.TotalReturn, 200, 0)]
+        public void NormalizationModeDoesNotChangeNetProfit(DataNormalizationMode mode, decimal profitLoss, decimal dividendPayment)
+        {
+            const decimal fee = 1;
+            const decimal quantity = 100;
+            var algorithm = new QCAlgorithm();
+            algorithm.UniverseSettings.DataNormalizationMode = mode;
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+
+            var spy = algorithm.AddEquity("SPY");
+            spy.SetMarketPrice(new Tick(new DateTime(2000, 01, 01), Symbols.SPY, 100m, 99m, 101m));
+            spy.Holdings.SetHoldings(100m, quantity);
+            spy.Holdings.AddNewFee(fee);
+            spy.Holdings.AddNewProfit(profitLoss);
+
+            var distribution = dividendPayment / quantity;
+
+            var dividend = new Dividend(Symbols.SPY, new DateTime(2000, 01, 01), distribution, 0.5m);
+            algorithm.Portfolio.ApplyDividend(dividend,
+                algorithm.LiveMode,
+                algorithm.SubscriptionManager.SubscriptionDataConfigService
+                    .GetSubscriptionDataConfigs(spy.Symbol)
+                    .DataNormalizationMode());
+
+            // TotalProfit is the sum of profit loss and dividend
+            Assert.AreEqual(profitLoss + dividendPayment, algorithm.Portfolio.TotalProfit);
+            // TotalNetProfit is the sum of profit loss and dividend minus fees
+            Assert.AreEqual(profitLoss + dividendPayment - fee, algorithm.Portfolio.TotalNetProfit);
+        }
+
+        [TestCase()]
+        [TestCase(200000)]
+        public void SetAccountCurrency(decimal? startingCash = null)
         {
             var algorithm = new QCAlgorithm();
-            var securities = new SecurityManager(TimeKeeper);
-            var transactions = new SecurityTransactionManager(null, securities);
-            algorithm.Portfolio = new SecurityPortfolioManager(securities, transactions);
 
             Assert.AreEqual(Currencies.USD, algorithm.AccountCurrency);
             Assert.AreEqual(Currencies.USD, algorithm.Portfolio.CashBook.AccountCurrency);
-            var amount = algorithm.Portfolio.CashBook[Currencies.USD].Amount;
+            var expectedAmount = algorithm.Portfolio.CashBook[Currencies.USD].Amount;
 
-            algorithm.SetAccountCurrency("btc");
+            if (startingCash == null)
+            {
+                algorithm.SetAccountCurrency("btc");
+            }
+            else
+            {
+                algorithm.SetAccountCurrency("btc", (decimal)startingCash);
+                expectedAmount = (decimal)startingCash;
+            }
+
             Assert.AreEqual("BTC", algorithm.AccountCurrency);
             Assert.AreEqual("BTC", algorithm.Portfolio.CashBook.AccountCurrency);
-            Assert.AreEqual(amount, algorithm.Portfolio.CashBook["BTC"].Amount);
+            Assert.AreEqual(expectedAmount, algorithm.Portfolio.CashBook["BTC"].Amount);
         }
 
         [Test]
         public void CanNotChangeAccountCurrencyAfterAddingASecurity()
         {
             var algorithm = new QCAlgorithm();
-            var securities = new SecurityManager(TimeKeeper);
-            var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            algorithm.SetDateTime(TimeKeeper.UtcTime);
 
-            algorithm.Securities = securities;
-
-            securities.Add(
+            algorithm.Securities.Add(
                 Symbols.SPY,
                 new Security(
                     SecurityExchangeHours,
@@ -2595,26 +2717,166 @@ namespace QuantConnect.Tests.Common.Securities
                     new SecurityCache()
                 )
             );
-            Assert.Throws<InvalidOperationException>(() => portfolio.SetAccountCurrency(Currencies.USD));
+            Assert.Throws<InvalidOperationException>(() => algorithm.Portfolio.SetAccountCurrency(Currencies.USD));
         }
 
         [TestCase("SetCash(decimal cash)")]
         [TestCase("SetCash(string symbol, ...)")]
         public void CanNotChangeAccountCurrencyAfterSettingCash(string overload)
         {
-            var securities = new SecurityManager(TimeKeeper);
-            var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
-
+            var algorithm = new QCAlgorithm();
             if (overload == "SetCash(decimal cash)")
             {
-                portfolio.SetCash(10);
+                algorithm.Portfolio.SetCash(10);
             }
             else
             {
-                portfolio.SetCash(Currencies.USD, 1, 1);
+                algorithm.Portfolio.SetCash(Currencies.USD, 1, 1);
             }
-            Assert.Throws<InvalidOperationException>(() => portfolio.SetAccountCurrency(Currencies.USD));
+            Assert.Throws<InvalidOperationException>(() => algorithm.Portfolio.SetAccountCurrency(Currencies.USD));
+        }
+
+        [Test]
+        public void AddsEmptyUnsettledCashInstancesAsNewCashInstancesAreAddedToTheCashBook()
+        {
+            var algorithm = new QCAlgorithm();
+            var additions = 0;
+            algorithm.Portfolio.UnsettledCashBook.Updated += (sender, args) =>
+            {
+                if (args.UpdateType == CashBookUpdateType.Added)
+                {
+                    additions++;
+                }
+            };
+
+            algorithm.SetCash(Currencies.EUR, 1000, 1.08m);
+            algorithm.SetCash("AUD", 1000, 0.7m);
+
+            // expected only 2 additions, USD is the account currency so it its supposed to already be there
+            Assert.AreEqual(2, additions);
+            Assert.AreEqual(3, algorithm.Portfolio.UnsettledCashBook.Count);
+
+            Assert.IsTrue(algorithm.Portfolio.UnsettledCashBook.ContainsKey(Currencies.USD));
+            Assert.IsTrue(algorithm.Portfolio.UnsettledCashBook.ContainsKey(Currencies.EUR));
+            Assert.IsTrue(algorithm.Portfolio.UnsettledCashBook.ContainsKey("AUD"));
+
+            // When added, the amount should be 0
+            Assert.IsTrue(algorithm.Portfolio.UnsettledCashBook
+                .Where(kvp => kvp.Key != Currencies.USD)
+                .All(kvp => kvp.Value.Amount == 0));
+        }
+
+        [Test]
+        public void UpdatesUnsettledCashCurrencyConversionAsItIsUpdatedForSettledCash()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SetCash(Currencies.EUR, 1000, 1.08m);
+            algorithm.SetCash("AUD", 1000, 0.7m);
+
+            var unsettledCashBook = algorithm.Portfolio.UnsettledCashBook;
+            var currencyConversionUpdates = 0;
+            foreach (var unsettledCash in unsettledCashBook.Values)
+            {
+                unsettledCash.CurrencyConversionUpdated += (sender, args) =>
+                {
+                    currencyConversionUpdates++;
+                };
+            }
+
+            var cashBook = algorithm.Portfolio.CashBook;
+            var settledEurCash = cashBook["EUR"];
+            var settledAudCash = cashBook["AUD"];
+            var unsettledEurCash = unsettledCashBook["EUR"];
+            var unsettledAudCash = unsettledCashBook["AUD"];
+
+            settledEurCash.CurrencyConversion = new TestCurrencyConversion(cashBook.AccountCurrency, "EUR", 1.08m);
+            Assert.AreEqual(1, currencyConversionUpdates);
+            settledAudCash.CurrencyConversion = new TestCurrencyConversion(cashBook.AccountCurrency, "AUD", 0.7m);
+            Assert.AreEqual(2, currencyConversionUpdates);
+
+
+            var prevEurConversionRate = unsettledEurCash.ConversionRate;
+            var prevAudConversionRate = unsettledAudCash.ConversionRate;
+
+            foreach (var cash in cashBook.Values)
+            {
+                cash.Update();
+            }
+
+            Assert.AreEqual(prevEurConversionRate * 1.01m, settledEurCash.ConversionRate);
+            Assert.AreEqual(prevAudConversionRate * 1.01m, settledAudCash.ConversionRate);
+            Assert.AreEqual(settledEurCash.ConversionRate, unsettledEurCash.ConversionRate);
+            Assert.AreEqual(settledAudCash.ConversionRate, unsettledAudCash.ConversionRate);
+        }
+
+        private static TestCaseData[] MarginRemainingTestCases => new[]
+            {
+                new TestCaseData(SecurityType.Equity, 0, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Equity, 0, OrderDirection.Sell),
+                new TestCaseData(SecurityType.Equity, +100, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Equity, +100, OrderDirection.Sell),
+                new TestCaseData(SecurityType.Equity, -100, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Equity, -100, OrderDirection.Sell),
+                new TestCaseData(SecurityType.Option, 0, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Option, 0, OrderDirection.Sell),
+                new TestCaseData(SecurityType.Option, +10, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Option, +10, OrderDirection.Sell).Explicit(),
+                new TestCaseData(SecurityType.Option, -10, OrderDirection.Buy),
+                new TestCaseData(SecurityType.Option, -10, OrderDirection.Sell),
+                new TestCaseData(SecurityType.FutureOption, 0, OrderDirection.Buy),
+                new TestCaseData(SecurityType.FutureOption, 0, OrderDirection.Sell),
+                new TestCaseData(SecurityType.FutureOption, +10, OrderDirection.Buy),
+                new TestCaseData(SecurityType.FutureOption, +10, OrderDirection.Sell),
+                new TestCaseData(SecurityType.FutureOption, -10, OrderDirection.Buy),
+                new TestCaseData(SecurityType.FutureOption, -10, OrderDirection.Sell),
+            };
+
+        [TestCaseSource(nameof(MarginRemainingTestCases))]
+        public void GetsMarginRemainingForSecurity(SecurityType securityType, int initialHoldingsQuantity,
+            OrderDirection direction)
+        {
+            var algorithm = new AlgorithmStub();
+            algorithm.SetSecurityInitializer(security => security.FeeModel = new ConstantFeeModel(0));
+            algorithm.SetCash(1000000);
+
+            Security security = null;
+            switch (securityType)
+            {
+                case SecurityType.Equity:
+                    security = algorithm.AddEquity("SPY");
+                    break;
+                case SecurityType.Option:
+                    security = algorithm.AddOptionContract(Symbols.CreateOptionSymbol("SPY", OptionRight.Call, 300, new DateTime(2023, 05, 19)));
+                    break;
+                case SecurityType.FutureOption:
+                    var underlying = algorithm.AddFuture("ES");
+                    security = algorithm.AddFutureOptionContract(Symbols.CreateFutureOptionSymbol(underlying.Symbol,
+                        OptionRight.Call, 300, new DateTime(2023, 05, 19)));
+                    break;
+                default:
+                    Assert.Fail("Invalid security type.");
+                    break;
+            }
+
+            security.SetMarketPrice(new Tick { Value = 100m });
+            security.Holdings.SetHoldings(security.Price, initialHoldingsQuantity);
+
+            var goingInSameDirection = security.Holdings.IsLong && direction == OrderDirection.Buy
+                || security.Holdings.IsShort && direction == OrderDirection.Sell;
+
+            var marginRemaining = algorithm.Portfolio.GetMarginRemaining(security.Symbol, direction);
+
+            if (goingInSameDirection)
+            {
+                Assert.AreEqual(algorithm.Portfolio.MarginRemaining, marginRemaining);
+            }
+            else
+            {
+                var expectedMarginRemaining = algorithm.Portfolio.MarginRemaining
+                    + security.BuyingPowerModel.GetMaintenanceMargin(MaintenanceMarginParameters.ForCurrentHoldings(security))
+                    + Math.Abs(security.BuyingPowerModel.GetInitialMarginRequirement(new InitialMarginParameters(security, security.Holdings.Quantity)));
+                Assert.AreEqual(expectedMarginRemaining, marginRemaining);
+            }
         }
 
         private SubscriptionDataConfig CreateTradeBarDataConfig(SecurityType type, Symbol symbol)
@@ -2663,9 +2925,9 @@ namespace QuantConnect.Tests.Common.Securities
                 return order;
             }
 
-            public Order GetOrderByBrokerageId(string brokerageId)
+            public List<Order> GetOrdersByBrokerageId(string brokerageId)
             {
-                return _orders.Values.FirstOrDefault(x => x.BrokerId.Contains(brokerageId));
+                return _orders.Values.Where(o => o.BrokerId.Contains(brokerageId)).Select(o => o.Clone()).ToList();
             }
 
             public IEnumerable<OrderTicket> GetOrderTickets(Func<OrderTicket, bool> filter = null)
@@ -2698,6 +2960,31 @@ namespace QuantConnect.Tests.Common.Securities
             public OrderTicket Process(OrderRequest request)
             {
                 throw new NotImplementedException();
+            }
+        }
+
+        class TestCurrencyConversion : ICurrencyConversion
+        {
+            public event EventHandler<decimal> ConversionRateUpdated;
+
+            public string SourceCurrency { get; }
+
+            public string DestinationCurrency { get; }
+
+            public decimal ConversionRate { get; set; }
+
+            public IEnumerable<Security> ConversionRateSecurities { get; } = Enumerable.Empty<Security>();
+
+            public TestCurrencyConversion(string sourceCurrency, string destinationCurrency, decimal conversionRate)
+            {
+                SourceCurrency = sourceCurrency;
+                DestinationCurrency = destinationCurrency;
+                ConversionRate = conversionRate;
+            }
+
+            public void Update()
+            {
+                ConversionRate *= 1.01m;
             }
         }
     }

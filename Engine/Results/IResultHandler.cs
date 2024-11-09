@@ -24,6 +24,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Lean.Engine.Results
 {
@@ -32,7 +33,7 @@ namespace QuantConnect.Lean.Engine.Results
     /// Backtester or the Live trading platform:
     /// </summary>
     [InheritedExport(typeof(IResultHandler))]
-    public interface IResultHandler
+    public interface IResultHandler : IStatisticsService
     {
         /// <summary>
         /// Put messages to process into the queue so they are processed by this thread.
@@ -60,11 +61,8 @@ namespace QuantConnect.Lean.Engine.Results
         /// <summary>
         /// Initialize the result handler with this result packet.
         /// </summary>
-        /// <param name="job">Algorithm job packet for this result handler</param>
-        /// <param name="messagingHandler">The messaging handler provider to use</param>
-        /// <param name="api">The api implementation to use</param>
-        /// <param name="transactionHandler"></param>
-        void Initialize(AlgorithmNodePacket job, IMessagingHandler messagingHandler, IApi api, ITransactionHandler transactionHandler);
+        /// <param name="parameters">DTO parameters class to initialize a result handler</param>
+        void Initialize(ResultHandlerInitializeParameters parameters);
 
         /// <summary>
         /// Process debug messages with the preconfigured settings.
@@ -125,12 +123,6 @@ namespace QuantConnect.Lean.Engine.Results
         void SetAlgorithm(IAlgorithm algorithm, decimal startingPortfolioValue);
 
         /// <summary>
-        /// Sets the current alpha runtime statistics
-        /// </summary>
-        /// <param name="statistics">The current alpha runtime statistics</param>
-        void SetAlphaRuntimeStatistics(AlphaRuntimeStatistics statistics);
-
-        /// <summary>
         /// Send a algorithm status update to the user of the algorithms running state.
         /// </summary>
         /// <param name="status">Status enum of the algorithm.</param>
@@ -166,5 +158,17 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="name">The name of the results</param>
         /// <param name="result">The results to save</param>
         void SaveResults(string name, Result result);
+
+        /// <summary>
+        /// Handles updates to the algorithm's name
+        /// </summary>
+        /// <param name="name">The new name</param>
+        void AlgorithmNameUpdated(string name);
+
+        /// <summary>
+        /// Handles updates to the algorithm's tags
+        /// </summary>
+        /// <param name="tags">The new tags</param>
+        void AlgorithmTagsUpdated(HashSet<string> tags);
     }
 }

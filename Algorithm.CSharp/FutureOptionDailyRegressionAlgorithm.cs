@@ -29,8 +29,8 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class FutureOptionDailyRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        protected OrderTicket Ticket;
-        protected Symbol DcOption;
+        protected OrderTicket Ticket { get; set; }
+        protected Symbol DcOption { get; set; }
         protected virtual Resolution Resolution => Resolution.Daily;
 
         public override void Initialize()
@@ -47,7 +47,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Resolution).Symbol;
 
             // Attempt to fetch a specific future option contract
-            DcOption = OptionChainProvider.GetOptionContractList(dc, Time)
+            DcOption = OptionChain(dc)
                 .Where(x => x.ID.StrikePrice == 17m && x.ID.OptionRight == OptionRight.Call)
                 .Select(x => AddFutureOptionContract(x, Resolution).Symbol)
                 .FirstOrDefault();
@@ -59,7 +59,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (DcOption != expectedContract)
             {
-                throw new Exception($"Contract {DcOption} was not the expected contract {expectedContract}");
+                throw new RegressionTestException($"Contract {DcOption} was not the expected contract {expectedContract}");
             }
 
             ScheduleBuySell();
@@ -82,8 +82,8 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnData(Slice slice)
         {
-            // Assert we are only getting data at 7PM (12AM UTC)
-            if (slice.Time.Hour != 19)
+            // Assert we are only getting data at 5PM NY, for DC future market closes at 16pm chicago
+            if (slice.Time.Hour != 17)
             {
                 throw new ArgumentException($"Expected data at 7PM each day; instead was {slice.Time}");
             }
@@ -92,17 +92,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Ran at the end of the algorithm to ensure the algorithm has no holdings
         /// </summary>
-        /// <exception cref="Exception">The algorithm has holdings</exception>
+        /// <exception cref="RegressionTestException">The algorithm has holdings</exception>
         public override void OnEndOfAlgorithm()
         {
             if (Portfolio.Invested)
             {
-                throw new Exception($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
+                throw new RegressionTestException($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
             }
 
             if (Ticket.Status != OrderStatus.Filled)
             {
-                throw new Exception("Future option order failed to fill correctly");
+                throw new RegressionTestException("Future option order failed to fill correctly");
             }
         }
 
@@ -114,12 +114,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 35;
+        public virtual long DataPoints => 32;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -127,52 +127,42 @@ namespace QuantConnect.Algorithm.CSharp
         public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
-            {"Average Loss", "-0.82%"},
-            {"Compounding Annual Return", "-66.144%"},
-            {"Drawdown", "0.800%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "-0.825%"},
-            {"Sharpe Ratio", "-6.988"},
+            {"Average Loss", "0%"},
+            {"Compounding Annual Return", "0%"},
+            {"Drawdown", "0%"},
+            {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99175.06"},
+            {"Net Profit", "0%"},
+            {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
-            {"Loss Rate", "100%"},
+            {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.467"},
-            {"Beta", "-7.512"},
-            {"Annual Standard Deviation", "0.093"},
-            {"Annual Variance", "0.009"},
-            {"Information Ratio", "-7.581"},
-            {"Tracking Error", "0.105"},
-            {"Treynor Ratio", "0.086"},
+            {"Alpha", "0"},
+            {"Beta", "0"},
+            {"Annual Standard Deviation", "0"},
+            {"Annual Variance", "0"},
+            {"Information Ratio", "0"},
+            {"Tracking Error", "0"},
+            {"Treynor Ratio", "0"},
             {"Total Fees", "$4.94"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "DC V5E8P9VAH3IC|DC V5E8P9SH0U0X"},
-            {"Fitness Score", "0.006"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-80.18"},
-            {"Portfolio Turnover", "0.013"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "dfcf673b46b9054a15babe1b0d734c35"}
+            {"Portfolio Turnover", "2.09%"},
+            {"OrderListHash", "fecc411b8967075513a8422a572f4144"}
         };
     }
 }

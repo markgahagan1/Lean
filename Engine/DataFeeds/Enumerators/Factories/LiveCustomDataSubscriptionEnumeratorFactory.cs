@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Python.Runtime;
 using QuantConnect.Data;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
@@ -32,18 +33,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         private readonly TimeSpan _minimumIntervalCheck;
         private readonly ITimeProvider _timeProvider;
         private readonly Func<DateTime, DateTime> _dateAdjustment;
+        private readonly IObjectStore _objectStore;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LiveCustomDataSubscriptionEnumeratorFactory"/> class
         /// </summary>
         /// <param name="timeProvider">Time provider from data feed</param>
+        /// <param name="objectStore">The object store to use</param>
         /// <param name="dateAdjustment">Func that allows adjusting the datetime to use</param>
         /// <param name="minimumIntervalCheck">Allows specifying the minimum interval between each enumerator refresh and data check, default is 30 minutes</param>
-        public LiveCustomDataSubscriptionEnumeratorFactory(ITimeProvider timeProvider, Func<DateTime, DateTime> dateAdjustment = null, TimeSpan? minimumIntervalCheck = null)
+        public LiveCustomDataSubscriptionEnumeratorFactory(ITimeProvider timeProvider, IObjectStore objectStore,
+            Func<DateTime, DateTime> dateAdjustment = null, TimeSpan? minimumIntervalCheck = null)
         {
             _timeProvider = timeProvider;
             _dateAdjustment = dateAdjustment;
             _minimumIntervalCheck = minimumIntervalCheck ?? TimeSpan.FromMinutes(30);
+            _objectStore = objectStore;
         }
 
         /// <summary>
@@ -107,7 +112,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
                         IEnumerator<BaseData> collectionEnumerator;
                         if (collection != null)
                         {
-                            if (source.TransportMedium == SubscriptionTransportMedium.Rest)
+                            if (source.TransportMedium == SubscriptionTransportMedium.Rest || source.TransportMedium == SubscriptionTransportMedium.RemoteFile)
                             {
                                 // we want to make sure the data points we *unroll* are not past
                                 collectionEnumerator = collection.Data
@@ -139,7 +144,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
             {
                 var newLocalFrontier = localFrontier.Value;
                 var dataSourceReader = GetSubscriptionDataSourceReader(source, dataCacheProvider, config, localDate, baseDataInstance, dataProvider);
-                foreach (var datum in dataSourceReader.Read(source))
+                using var subscriptionEnumerator = SortEnumerator<DateTime>.TryWrapSortEnumerator(source.Sort, dataSourceReader.Read(source));
+                foreach (var datum in subscriptionEnumerator)
                 {
                     // always skip past all times emitted on the previous invocation of this enumerator
                     // this allows data at the same time from the same refresh of the source while excluding
@@ -188,7 +194,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
             IDataProvider dataProvider
             )
         {
-            return SubscriptionDataSourceReader.ForSource(source, dataCacheProvider, config, date, true, baseDataInstance, dataProvider);
+            return SubscriptionDataSourceReader.ForSource(source, dataCacheProvider, config, date, true, baseDataInstance, dataProvider, _objectStore);
         }
 
         private bool SourceRequiresFastForward(SubscriptionDataSource source)

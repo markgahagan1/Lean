@@ -44,11 +44,11 @@ namespace QuantConnect.Algorithm.CSharp
             var option = AddOption("AAPL", Resolution.Minute);
             _option = option.Symbol;
 
-            option.SetFilter(universe => from symbol in universe
+            option.SetFilter(universe => from contract in universe
                                 .WeeklysOnly()
                                 .Strikes(-5, +5)
                                 .Expiration(TimeSpan.Zero, TimeSpan.FromDays(29))
-                                         select symbol);
+                                         select contract.Symbol);
         }
 
         public override void OnOrderEvent(OrderEvent orderEvent)
@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (_contractSymbol != null)
             {
@@ -69,17 +69,17 @@ namespace QuantConnect.Algorithm.CSharp
             }
 
             // Buy the underlying for our covered put
-            if (data.ContainsKey(_equity) && !_purchasedUnderlying)
+            if (slice.ContainsKey(_equity) && !_purchasedUnderlying)
             {
                 MarketOrder(_equity, 100 * quantity);
             }
 
             // Buy a contract and exercise it immediately
-            if (_purchasedUnderlying && data.OptionChains.TryGetValue(_option, out OptionChain chain))
+            if (_purchasedUnderlying && slice.OptionChains.TryGetValue(_option, out OptionChain chain))
             {
                 var contract = chain
                     .Where(x => x.Right == OptionRight.Put)
-                    .OrderByDescending(x => x.Strike - data[_equity].Price)
+                    .OrderByDescending(x => x.Strike - slice[_equity].Price)
                     .FirstOrDefault();
 
                 _contractSymbol = contract.Symbol;
@@ -96,7 +96,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (Portfolio[_equity].Quantity != 0)
             {
-                throw new Exception("Regression equity holdings should be zero after exercise.");
+                throw new RegressionTestException("Regression equity holdings should be zero after exercise.");
             }
         }
 
@@ -108,12 +108,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 1895857;
+        public long DataPoints => 105730;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -121,18 +121,26 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "3"},
             {"Average Win", "2.13%"},
             {"Average Loss", "-2.21%"},
-            {"Compounding Annual Return", "-12.277%"},
+            {"Compounding Annual Return", "-11.379%"},
             {"Drawdown", "0.100%"},
             {"Expectancy", "-0.019"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "998677"},
             {"Net Profit", "-0.132%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
@@ -144,29 +152,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "-9.486"},
             {"Tracking Error", "0.008"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$15.00"},
+            {"Total Fees", "$23.00"},
             {"Estimated Strategy Capacity", "$420000.00"},
             {"Lowest Capacity Asset", "AAPL 2ZQA0P58YFYIU|AAPL R735QTJ8XC9X"},
-            {"Fitness Score", "0.5"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-112.501"},
-            {"Portfolio Turnover", "1.322"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "91c8ac0c861327902517d58ad54386e4"}
+            {"Portfolio Turnover", "66.12%"},
+            {"OrderListHash", "e448ec4e631d4215a2cae661e3a219ed"}
         };
     }
 }

@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using NUnit.Framework;
 using Python.Runtime;
 using QuantConnect.Algorithm;
+using QuantConnect.Statistics;
 using QuantConnect.Tests.Engine.DataFeeds;
 
 namespace QuantConnect.Tests.Python
@@ -76,12 +77,13 @@ namespace QuantConnect.Tests.Python
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("FilterUniverseRegressionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "2"},
+                    {PerformanceMetrics.TotalOrders, "2"},
                     {"Average Win", "0%"},
                     {"Average Loss", "-0.02%"},
-                    {"Compounding Annual Return", "-1.629%"},
+                    {"Compounding Annual Return", "-1.521%"},
                     {"Drawdown", "0.000%"},
                     {"Expectancy", "-1"},
+                    {"End Equity", "99979"},
                     {"Net Profit", "-0.021%"},
                     {"Sharpe Ratio", "0"},
                     {"Probabilistic Sharpe Ratio", "0%"},
@@ -96,14 +98,13 @@ namespace QuantConnect.Tests.Python
                     {"Tracking Error", "0"},
                     {"Treynor Ratio", "0"},
                     {"Total Fees", "$1.00"},
-                    {"OrderListHash", "e6bf5bf0ba1475d11fcb7524e04e6295"}
+                    {"OrderListHash", "133c6a56631cf3d8a089c3095a25ee81"}
                     },
                     Language.Python,
                     AlgorithmStatus.Completed);
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus);
         }

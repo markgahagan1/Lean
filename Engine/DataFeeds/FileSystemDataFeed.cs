@@ -17,9 +17,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
@@ -47,6 +47,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private IDataProvider _dataProvider;
         private IDataCacheProvider _cacheProvider;
         private SubscriptionCollection _subscriptions;
+        private MarketHoursDatabase _marketHoursDatabase;
         private SubscriptionDataReaderSubscriptionEnumeratorFactory _subscriptionFactory;
 
         /// <summary>
@@ -80,9 +81,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 _mapFileProvider,
                 _factorFileProvider,
                 _cacheProvider,
+                algorithm,
                 enablePriceScaling: false);
 
             IsActive = true;
+            _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
         }
 
         /// <summary>
@@ -97,7 +100,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private IEnumerator<BaseData> CreateDataEnumerator(SubscriptionRequest request, Resolution? fillForwardResolution)
         {
             // ReSharper disable once PossibleMultipleEnumeration
-            if (!request.TradableDays.Any())
+            if (!request.TradableDaysInDataTimeZone.Any())
             {
                 _algorithm.Error(
                     $"No data loaded for {request.Security.Symbol} because there were no tradeable dates for this security."
@@ -127,7 +130,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 var warmupRequest = new SubscriptionRequest(request, endTimeUtc: pivotTimeUtc,
                     configuration: new SubscriptionDataConfig(request.Configuration, resolution: _algorithm.Settings.WarmupResolution));
                 IEnumerator<BaseData> warmupEnumerator = null;
-                if (warmupRequest.TradableDays.Any()
+                if (warmupRequest.TradableDaysInDataTimeZone.Any()
                     // since we change the resolution, let's validate it's still valid configuration (example daily equity quotes are not!)
                     && LeanData.IsValidConfiguration(warmupRequest.Configuration.SecurityType, warmupRequest.Configuration.Resolution, warmupRequest.Configuration.TickType))
                 {
@@ -137,7 +140,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         Time.OneDay,
                         1,
                         false,
-                        warmupRequest.Configuration.DataTimeZone)
+                        warmupRequest.Configuration.DataTimeZone,
+                        LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Security.Symbol, Time.OneDay))
                         .ConvertToUtc(request.Security.Exchange.TimeZone);
                     if (pivotTimeUtc < warmupRequest.StartTimeUtc)
                     {
@@ -162,13 +166,15 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 enumerator = CreateEnumerator(request);
             }
 
+            enumerator = AddScheduleWrapper(request, enumerator, null);
+
             if (request.IsUniverseSubscription && request.Universe is UserDefinedUniverse)
             {
                 // for user defined universe we do not use a worker task, since calls to AddData can happen in any moment
                 // and we have to be able to inject selection data points into the enumerator
-                return SubscriptionUtils.Create(request, enumerator);
+                return SubscriptionUtils.Create(request, enumerator, _algorithm.Settings.DailyPreciseEndTime);
             }
-            return SubscriptionUtils.CreateAndScheduleWorker(request, enumerator, _factorFileProvider, true);
+            return SubscriptionUtils.CreateAndScheduleWorker(request, enumerator, _factorFileProvider, true, _algorithm.Settings.DailyPreciseEndTime);
         }
 
         /// <summary>
@@ -179,23 +185,21 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
         }
 
+        /// <summary>
+        /// Creates a universe enumerator from the Subscription request, the underlying enumerator func and the fill forward resolution (in some cases)
+        /// </summary>
         protected IEnumerator<BaseData> CreateUniverseEnumerator(SubscriptionRequest request, Func<SubscriptionRequest, Resolution?, IEnumerator<BaseData>> createUnderlyingEnumerator, Resolution? fillForwardResolution = null)
         {
             ISubscriptionEnumeratorFactory factory = _subscriptionFactory;
             if (request.Universe is ITimeTriggeredUniverse)
             {
                 factory = new TimeTriggeredUniverseSubscriptionEnumeratorFactory(request.Universe as ITimeTriggeredUniverse,
-                    MarketHoursDatabase.FromDataFolder(),
+                    _marketHoursDatabase,
                     _timeProvider);
-
-                if (request.Universe is UserDefinedUniverse)
-                {
-                    return factory.CreateEnumerator(request, _dataProvider);
-                }
             }
-            else if (request.Configuration.Type == typeof(CoarseFundamental))
+            else if (request.Configuration.Type == typeof(FundamentalUniverse))
             {
-                factory = new BaseDataCollectionSubscriptionEnumeratorFactory();
+                factory = new BaseDataCollectionSubscriptionEnumeratorFactory(_algorithm.ObjectStore);
             }
             else if (request.Configuration.Type == typeof(ZipEntryName))
             {
@@ -207,6 +211,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                 var result = new BaseDataSubscriptionEnumeratorFactory(_algorithm.OptionChainProvider, _algorithm.FutureChainProvider)
                     .CreateEnumerator(request, _dataProvider);
+
+                if (LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol, request.Configuration.Increment))
+                {
+                    result = new StrictDailyEndTimesEnumerator(result, request.ExchangeHours, request.StartTimeLocal);
+                }
                 result = ConfigureEnumerator(request, true, result, fillForwardResolution);
                 return TryAppendUnderlyingEnumerator(request, result, createUnderlyingEnumerator, fillForwardResolution);
             }
@@ -217,16 +226,40 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         }
 
         /// <summary>
+        /// Returns a scheduled enumerator from the given arguments. It can also return the given underlying enumerator
+        /// </summary>
+        protected IEnumerator<BaseData> AddScheduleWrapper(SubscriptionRequest request, IEnumerator<BaseData> underlying, ITimeProvider timeProvider)
+        {
+            if (!request.IsUniverseSubscription || !request.Universe.UniverseSettings.Schedule.Initialized)
+            {
+                return underlying;
+            }
+
+            var schedule = request.Universe.UniverseSettings.Schedule.Get(request.StartTimeLocal, request.EndTimeLocal);
+            if (schedule != null)
+            {
+                return new ScheduledEnumerator(underlying, schedule, timeProvider, request.Configuration.ExchangeTimeZone, request.StartTimeLocal);
+            }
+            return underlying;
+        }
+
+        /// <summary>
         /// If required will add a new enumerator for the underlying symbol
         /// </summary>
         protected IEnumerator<BaseData> TryAppendUnderlyingEnumerator(SubscriptionRequest request, IEnumerator<BaseData> parent, Func<SubscriptionRequest, Resolution?, IEnumerator<BaseData>> createEnumerator, Resolution? fillForwardResolution)
         {
             if (request.Configuration.Symbol.SecurityType.IsOption() && request.Configuration.Symbol.HasUnderlying)
             {
+                var underlyingSymbol = request.Configuration.Symbol.Underlying;
+                var underlyingMarketHours = _marketHoursDatabase.GetEntry(underlyingSymbol.ID.Market, underlyingSymbol, underlyingSymbol.SecurityType);
+
                 // TODO: creating this subscription request/config is bad
                 var underlyingRequests = new SubscriptionRequest(request,
                     isUniverseSubscription: false,
-                    configuration: new SubscriptionDataConfig(request.Configuration, symbol: request.Configuration.Symbol.Underlying, objectType: typeof(TradeBar), tickType: TickType.Trade));
+                    configuration: new SubscriptionDataConfig(request.Configuration, symbol: underlyingSymbol, objectType: typeof(TradeBar), tickType: TickType.Trade,
+                    // there's no guarantee the TZ are the same, specially the data timezone (index & index options)
+                    dataTimeZone: underlyingMarketHours.DataTimeZone,
+                    exchangeTimeZone: underlyingMarketHours.ExchangeHours.TimeZone));
 
                 var underlying = createEnumerator(underlyingRequests, fillForwardResolution);
                 underlying = new FilterEnumerator<BaseData>(underlying, data => data.DataType != MarketDataType.Auxiliary);
@@ -300,8 +333,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     fillForwardSpan = Ref.Create(fillForwardResolution.Value.ToTimeSpan());
                 }
 
-                enumerator = new FillForwardEnumerator(enumerator, request.Security.Exchange, fillForwardSpan,
-                    request.Configuration.ExtendedMarketHours, request.EndTimeLocal, request.Configuration.Resolution.ToTimeSpan(), request.Configuration.DataTimeZone);
+                var useDailyStrictEndTimes = LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol, request.Configuration.Increment);
+                enumerator = new FillForwardEnumerator(enumerator, request.Security.Exchange, fillForwardSpan, request.Configuration.ExtendedMarketHours, request.EndTimeLocal,
+                    request.Configuration.Increment, request.Configuration.DataTimeZone, useDailyStrictEndTimes);
             }
 
             return enumerator;

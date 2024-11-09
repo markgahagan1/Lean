@@ -61,10 +61,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (Transactions.OrdersCount == 0 && slice.HasData)
             {
-                var matched = slice.Keys.Where(s => !ExpectedExpiryDates.Contains(s.ID.Date)).ToList();
+                var matched = slice.Keys.Where(s => !s.IsCanonical() && !ExpectedExpiryDates.Contains(s.ID.Date)).ToList();
                 if (matched.Count != 0)
                 {
-                    throw new Exception($"{matched.Count}/{slice.Keys.Count} were unexpected expiry date(s): " + string.Join(", ", matched.Select(x => x.ID.Date)));
+                    throw new RegressionTestException($"{matched.Count}/{slice.Keys.Count} were unexpected expiry date(s): " + string.Join(", ", matched.Select(x => x.ID.Date)));
                 }
 
                 foreach (var symbol in slice.Keys)
@@ -87,31 +87,39 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         ///     This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = {Language.CSharp};
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 2561853;
+        public long DataPoints => 2794076;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 232;
+        public int AlgorithmHistoryDataPoints => 252;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "0.00%"},
             {"Compounding Annual Return", "-0.020%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "10000000"},
+            {"End Equity", "9999980.12"},
             {"Net Profit", "0.000%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -126,26 +134,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$9.88"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "GC VMRHKN2NLWV1"},
-            {"Fitness Score", "0.008"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-121.652"},
-            {"Portfolio Turnover", "0.017"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "7cd0ac939e3b54130734e111180e99ae"}
+            {"Portfolio Turnover", "1.32%"},
+            {"OrderListHash", "cc9ca77de1272050971b5438e757df61"}
         };
     }
 }

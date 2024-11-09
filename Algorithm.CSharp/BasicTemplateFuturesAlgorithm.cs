@@ -39,11 +39,9 @@ namespace QuantConnect.Algorithm.CSharp
 
         // S&P 500 EMini futures
         private const string RootSP500 = Futures.Indices.SP500EMini;
-        public Symbol SP500 = QuantConnect.Symbol.Create(RootSP500, SecurityType.Future, Market.CME);
 
         // Gold futures
         private const string RootGold = Futures.Metals.Gold;
-        public Symbol Gold = QuantConnect.Symbol.Create(RootGold, SecurityType.Future, Market.COMEX);
 
         /// <summary>
         /// Initialize your algorithm and add desired assets.
@@ -81,7 +79,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Debug($"{Time} - SymbolChanged event: {changedEvent}");
                 if (Time.TimeOfDay != TimeSpan.Zero)
                 {
-                    throw new Exception($"{Time} unexpected symbol changed event {changedEvent}!");
+                    throw new RegressionTestException($"{Time} unexpected symbol changed event {changedEvent}!");
                 }
             }
 
@@ -117,7 +115,7 @@ namespace QuantConnect.Algorithm.CSharp
             var futureMarginModel = buyingPowerModel as FutureMarginModel;
             if (buyingPowerModel == null)
             {
-                throw new Exception($"Invalid buying power model. Found: {buyingPowerModel.GetType().Name}. Expected: {nameof(FutureMarginModel)}");
+                throw new RegressionTestException($"Invalid buying power model. Found: {buyingPowerModel.GetType().Name}. Expected: {nameof(FutureMarginModel)}");
             }
             var initialOvernight = futureMarginModel.InitialOvernightMarginRequirement;
             var maintenanceOvernight = futureMarginModel.MaintenanceOvernightMarginRequirement;
@@ -133,7 +131,7 @@ namespace QuantConnect.Algorithm.CSharp
                     && !addedSecurity.Symbol.IsCanonical()
                     && !addedSecurity.HasData)
                 {
-                    throw new Exception($"Future contracts did not work up as expected: {addedSecurity.Symbol}");
+                    throw new RegressionTestException($"Future contracts did not work up as expected: {addedSecurity.Symbol}");
                 }
             }
         }
@@ -146,12 +144,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 68645;
+        public long DataPoints => 75403;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -159,52 +157,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 340;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2700"},
+            {"Total Orders", "2700"},
             {"Average Win", "0.00%"},
             {"Average Loss", "0.00%"},
             {"Compounding Annual Return", "-99.777%"},
             {"Drawdown", "4.400%"},
             {"Expectancy", "-0.724"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "955700.5"},
             {"Net Profit", "-4.430%"},
-            {"Sharpe Ratio", "-31.389"},
+            {"Sharpe Ratio", "-31.63"},
+            {"Sortino Ratio", "-31.63"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "83%"},
             {"Win Rate", "17%"},
             {"Profit-Loss Ratio", "0.65"},
-            {"Alpha", "-3.059"},
+            {"Alpha", "-3.065"},
             {"Beta", "0.128"},
             {"Annual Standard Deviation", "0.031"},
             {"Annual Variance", "0.001"},
             {"Information Ratio", "-81.232"},
             {"Tracking Error", "0.212"},
-            {"Treynor Ratio", "-7.618"},
+            {"Treynor Ratio", "-7.677"},
             {"Total Fees", "$6237.00"},
             {"Estimated Strategy Capacity", "$14000.00"},
             {"Lowest Capacity Asset", "GC VOFJUCDY9XNH"},
-            {"Fitness Score", "0.001"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-58.725"},
-            {"Return Over Maximum Drawdown", "-32.073"},
-            {"Portfolio Turnover", "98.477"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "8f92e1528c6477a156449fd1e86527e7"}
+            {"Portfolio Turnover", "9912.69%"},
+            {"OrderListHash", "6e0f767a46a54365287801295cf7bb75"}
         };
     }
 }

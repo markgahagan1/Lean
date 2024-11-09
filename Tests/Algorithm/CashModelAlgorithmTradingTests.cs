@@ -638,7 +638,7 @@ namespace QuantConnect.Tests.Algorithm
             algo.Portfolio.SetCash(150000);
 
             var mock = new Mock<ITransactionHandler>();
-            var request = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null);
+            var request = new Mock<SubmitOrderRequest>(null, null, null, null, null, null, null, null, null, null);
             mock.Setup(m => m.Process(It.IsAny<OrderRequest>())).Returns(new OrderTicket(null, request.Object));
             mock.Setup(m => m.GetOpenOrders(It.IsAny<Func<Order, bool>>())).Returns(new List<Order>());
             algo.Transactions.SetOrderProcessor(mock.Object);
@@ -710,7 +710,7 @@ namespace QuantConnect.Tests.Algorithm
             var algo = new QCAlgorithm();
             algo.SubscriptionManager.SetDataManager(new DataManagerStub(algo));
             algo.SetCash(100000);
-            algo.SetBrokerageModel(BrokerageName.GDAX, AccountType.Cash);
+            algo.SetBrokerageModel(BrokerageName.Coinbase, AccountType.Cash);
             algo.Transactions.SetOrderProcessor(new FakeOrderProcessor());
             algo.SetFinishedWarmingUp();
             var cashSymbol = string.Empty;

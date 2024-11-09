@@ -51,7 +51,7 @@ namespace QuantConnect.Data.Auxiliary
         }
 
         /// <summary>
-        /// Gets a <see cref="FactorFile"/> instance for the specified symbol, or null if not found
+        /// Gets a <see cref="FactorFile{T}"/> instance for the specified symbol, or null if not found
         /// </summary>
         /// <param name="symbol">The security's symbol whose factor file we seek</param>
         /// <returns>The resolved factor file, or null if not found</returns>
@@ -85,7 +85,8 @@ namespace QuantConnect.Data.Auxiliary
         /// </summary>
         private IFactorProvider GetFactorFile(Symbol symbol, string permtick)
         {
-            var path = Path.Combine(Globals.CacheDataFolder, symbol.SecurityType.SecurityTypeToLower(), symbol.ID.Market, "factor_files", permtick.ToLowerInvariant() + ".csv");
+            var basePath = Globals.GetDataFolderPath(FactorFileZipHelper.GetRelativeFactorFilePath(symbol.ID.Market, symbol.SecurityType));
+            var path = Path.Combine(basePath, permtick.ToLowerInvariant() + ".csv");
 
             var factorFile = PriceScalingExtensions.SafeRead(permtick, _dataProvider.ReadLines(path), symbol.SecurityType);
             _cache.AddOrUpdate(symbol, factorFile, (s, c) => factorFile);

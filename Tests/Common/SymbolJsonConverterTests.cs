@@ -134,13 +134,14 @@ namespace QuantConnect.Tests.Common
             Assert.IsFalse(actual.All(x => x.Symbol == new Symbol(SecurityIdentifier.GenerateForex("EURUSD", Market.FXCM), "EURUSD")));
         }
 
-        [Test]
-        public void SymbolTypeNameHandling()
+        [TestCaseSource(nameof(TestSymbols))]
+        public void CamelCaseSymbolIsDeserializedCorrectly(string json, string value, string id, SecurityType securityType, Symbol underlying)
         {
-            const string json = @"{'$type':'QuantConnect.Symbol, QuantConnect.Common', 'Value':'EURGBP', 'ID': 'EURGBP 5O'}";
-            var expected = new Symbol(SecurityIdentifier.GenerateForex("EURGBP", Market.FXCM), "EURGBP");
-            var actual = JsonConvert.DeserializeObject<Symbol>(json, Settings);
-            Assert.AreEqual(expected, actual);
+            var deserializedSymbol = JsonConvert.DeserializeObject<Symbol>(json, Settings);
+            Assert.AreEqual(value, deserializedSymbol.Value);
+            Assert.AreEqual(id, deserializedSymbol.ID.ToString());
+            Assert.AreEqual(securityType, deserializedSymbol.SecurityType);
+            Assert.AreEqual(underlying, deserializedSymbol.Underlying);
         }
 
         [Test]
@@ -177,18 +178,19 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual("A", oldSymbol.Permtick);
         }
 
-        [TestCase("{\"value\":\"Fb    210618c00322500\",\"type\":\"2\"}", SecurityType.Option, "FB", OptionRight.Call, OptionStyle.American, 2021)]
-        [TestCase("{\"value\":\"aapl  210618C00129000\",\"type\":\"2\"}", SecurityType.Option, "AAPL", OptionRight.Call, OptionStyle.American, 2021)]
+        [TestCase("{\"value\":\"Fb    210618c00322500\",\"type\":\"2\"}", SecurityType.Option, "FB", "FB", OptionRight.Call, OptionStyle.American, 2021)]
+        [TestCase("{\"value\":\"aapl  210618C00129000\",\"type\":\"2\"}", SecurityType.Option, "AAPL", "AAPL", OptionRight.Call, OptionStyle.American, 2021)]
 
-        [TestCase("{\"value\":\"OGV1 C2040\",\"type\":\"8\"}", SecurityType.FutureOption, "GC", OptionRight.Call, OptionStyle.American, 2021)]
-        [TestCase("{\"value\":\"ESZ30 C3505\",\"type\":\"8\"}", SecurityType.FutureOption, "ES", OptionRight.Call, OptionStyle.American, 2030)]
-        [TestCase("{\"value\":\"SPXW  210618C04165000\",\"type\":\"10\"}", SecurityType.IndexOption, "SPXW", OptionRight.Call, OptionStyle.American, 2021)]
-        public void OptionUserFriendlyDeserialization(string jsonValue, SecurityType type, string underlying, OptionRight optionRight, OptionStyle optionStyle, int expirationYear)
+        [TestCase("{\"value\":\"OGV1 C2040\",\"type\":\"8\"}", SecurityType.FutureOption, "GC", "OG", OptionRight.Call, OptionStyle.American, 2021)]
+        [TestCase("{\"value\":\"ESZ30 C3505\",\"type\":\"8\"}", SecurityType.FutureOption, "ES", "ES", OptionRight.Call, OptionStyle.American, 2030)]
+        [TestCase("{\"value\":\"SPXW  210618C04165000\",\"type\":\"10\"}", SecurityType.IndexOption, "SPX", "SPXW", OptionRight.Call, OptionStyle.American, 2021)]
+        public void OptionUserFriendlyDeserialization(string jsonValue, SecurityType type, string underlying, string option, OptionRight optionRight, OptionStyle optionStyle, int expirationYear)
         {
             var symbol = JsonConvert.DeserializeObject<Symbol>(jsonValue);
 
             Assert.IsNotNull(symbol);
             Assert.AreEqual(type, symbol.SecurityType);
+            Assert.AreEqual(option, symbol.ID.Symbol);
             Assert.AreEqual(underlying, symbol.ID.Underlying.Symbol);
             Assert.AreEqual(optionRight, symbol.ID.OptionRight);
             Assert.AreEqual(optionStyle, symbol.ID.OptionStyle);
@@ -211,7 +213,7 @@ namespace QuantConnect.Tests.Common
         [TestCase("{\"value\":\"fb\",\"type\":\"1\"}", SecurityType.Equity, "FB", Market.USA)]
         [TestCase("{\"value\":\"AAPL\",\"type\":\"1\"}", SecurityType.Equity, "AAPL", Market.USA)]
 
-        [TestCase("{\"value\":\"BTCUSD\",\"type\":\"7\",\"market\":\"gdax\"}", SecurityType.Crypto, "BTCUSD", Market.GDAX)]
+        [TestCase("{\"value\":\"BTCUSD\",\"type\":\"7\",\"market\":\"coinbase\"}", SecurityType.Crypto, "BTCUSD", Market.Coinbase)]
         [TestCase("{\"value\":\"BTCUSD\",\"type\":\"7\",\"market\":\"binance\"}", SecurityType.Crypto, "BTCUSD", Market.Binance)]
 
         [TestCase("{\"value\":\"xauusd\",\"type\":\"6\",\"market\":\"oanda\"}", SecurityType.Cfd, "XAUUSD", Market.Oanda)]
@@ -226,6 +228,60 @@ namespace QuantConnect.Tests.Common
             Assert.AreEqual(symbolTicker, symbol.ID.Symbol);
             Assert.AreEqual(market, symbol.ID.Market);
         }
+
+        public static object[] TestSymbols =
+        {
+            new object[] { @"{
+				""value"": ""AAPL  140613P00660000"",
+				""id"": ""AAPL 2ZQGWTST4Z8NA|AAPL R735QTJ8XC9X"",
+				""permtick"": ""AAPL  140613P00660000"",
+				""underlying"": {
+					""value"": ""AAPL"",
+					""id"": ""AAPL R735QTJ8XC9X"",
+					""permtick"": ""AAPL""
+				}
+			}", "AAPL  140613P00660000", "AAPL 2ZQGWTST4Z8NA|AAPL R735QTJ8XC9X", SecurityType.Option, Symbols.AAPL },
+            new object[] { @"{
+                ""value"": ""GOOG  160115C00750000"",
+                ""id"": ""GOOCV W78ZEOEHQRYE|GOOCV VP83T1ZUHROL"",
+                ""permtick"": ""GOOG  160115C00750000"",
+                ""underlying"": {
+                    ""value"": ""GOOG"",
+                    ""id"": ""GOOCV VP83T1ZUHROL"",
+                    ""permtick"": ""GOOG""
+                }
+            }", "GOOG  160115C00750000", "GOOCV W78ZEOEHQRYE|GOOCV VP83T1ZUHROL", SecurityType.Option, Symbols.GOOG },
+            new object[] { @"{
+                ""value"": ""SPY"",
+                ""id"": ""SPY R735QTJ8XC9X"",
+                ""permtick"": ""SPY""
+            }", "SPY", "SPY R735QTJ8XC9X", SecurityType.Equity, null },
+            new object[] { @"{
+				""Value"": ""AAPL  140613P00660000"",
+				""ID"": ""AAPL 2ZQGWTST4Z8NA|AAPL R735QTJ8XC9X"",
+				""Permtick"": ""AAPL  140613P00660000"",
+				""Underlying"": {
+					""value"": ""AAPL"",
+					""id"": ""AAPL R735QTJ8XC9X"",
+					""permtick"": ""AAPL""
+				}
+			}", "AAPL  140613P00660000", "AAPL 2ZQGWTST4Z8NA|AAPL R735QTJ8XC9X", SecurityType.Option, Symbols.AAPL },
+            new object[] { @"{
+                ""Value"": ""GOOG  160115C00750000"",
+                ""ID"": ""GOOCV W78ZEOEHQRYE|GOOCV VP83T1ZUHROL"",
+                ""Permtick"": ""GOOG  160115C00750000"",
+                ""Underlying"": {
+                    ""value"": ""GOOG"",
+                    ""id"": ""GOOCV VP83T1ZUHROL"",
+                    ""permtick"": ""GOOG""
+                }
+            }", "GOOG  160115C00750000", "GOOCV W78ZEOEHQRYE|GOOCV VP83T1ZUHROL", SecurityType.Option, Symbols.GOOG },
+            new object[] { @"{
+                ""Value"": ""SPY"",
+                ""ID"": ""SPY R735QTJ8XC9X"",
+                ""Permtick"": ""SPY""
+            }", "SPY", "SPY R735QTJ8XC9X", SecurityType.Equity, null }
+        };
 
         class OldSymbol
         {

@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
                     // if found, trade it.
                     // Also check if exchange is open for regular or extended hours. Since daily data comes at 8PM, this allows us prevent the
                     // algorithm from trading on friday when there is not after-market.
-                    if (contract != null && Securities[contract.Symbol].Exchange.Hours.IsOpen(Time, true))
+                    if (contract != null)
                     {
                         MarketOrder(contract.Symbol, 1);
                     }
@@ -99,7 +99,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (Time.TimeOfDay != TimeSpan.Zero)
                 {
-                    throw new Exception($"{Time} unexpected symbol changed event {changedEvent}!");
+                    throw new RegressionTestException($"{Time} unexpected symbol changed event {changedEvent}!");
                 }
             }
         }
@@ -112,12 +112,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 11709;
+        public virtual long DataPoints => 12453;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -125,52 +125,42 @@ namespace QuantConnect.Algorithm.CSharp
         public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "118"},
-            {"Average Win", "0.09%"},
-            {"Average Loss", "-0.01%"},
-            {"Compounding Annual Return", "-0.479%"},
-            {"Drawdown", "0.500%"},
-            {"Expectancy", "-0.835"},
-            {"Net Profit", "-0.483%"},
-            {"Sharpe Ratio", "-1.938"},
-            {"Probabilistic Sharpe Ratio", "0%"},
-            {"Loss Rate", "98%"},
-            {"Win Rate", "2%"},
-            {"Profit-Loss Ratio", "8.76"},
-            {"Alpha", "-0.003"},
-            {"Beta", "-0.001"},
-            {"Annual Standard Deviation", "0.002"},
+            {"Total Orders", "34"},
+            {"Average Win", "0.33%"},
+            {"Average Loss", "-0.04%"},
+            {"Compounding Annual Return", "0.106%"},
+            {"Drawdown", "0.300%"},
+            {"Expectancy", "0.178"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "1001066.2"},
+            {"Net Profit", "0.107%"},
+            {"Sharpe Ratio", "-1.695"},
+            {"Sortino Ratio", "-0.804"},
+            {"Probabilistic Sharpe Ratio", "14.797%"},
+            {"Loss Rate", "88%"},
+            {"Win Rate", "12%"},
+            {"Profit-Loss Ratio", "9.01"},
+            {"Alpha", "-0.007"},
+            {"Beta", "0.002"},
+            {"Annual Standard Deviation", "0.004"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-1.397"},
+            {"Information Ratio", "-1.353"},
             {"Tracking Error", "0.089"},
-            {"Treynor Ratio", "5.665"},
-            {"Total Fees", "$263.30"},
-            {"Estimated Strategy Capacity", "$1000.00"},
+            {"Treynor Ratio", "-4.112"},
+            {"Total Fees", "$76.30"},
+            {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "ES VRJST036ZY0X"},
-            {"Fitness Score", "0.01"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.059"},
-            {"Return Over Maximum Drawdown", "-0.992"},
-            {"Portfolio Turnover", "0.031"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "b75b224669c374dcbacc33f946a1cc7c"}
+            {"Portfolio Turnover", "0.92%"},
+            {"OrderListHash", "7afa589d648c3f24253cd59156a2014e"}
         };
     }
 }

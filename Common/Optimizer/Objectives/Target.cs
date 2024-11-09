@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -27,8 +27,7 @@ namespace QuantConnect.Optimizer.Objectives
         /// <summary>
         /// Defines the direction of optimization, i.e. maximization or minimization
         /// </summary>
-        [JsonProperty("extremum")]
-        public Extremum Extremum { get; }
+        public Extremum Extremum { get; set; }
 
         /// <summary>
         /// Current value
@@ -50,15 +49,19 @@ namespace QuantConnect.Optimizer.Objectives
         }
 
         /// <summary>
+        /// Creates a new instance
+        /// </summary>
+        public Target()
+        {
+
+        }
+
+        /// <summary>
         /// Pretty representation of this optimization target
         /// </summary>
         public override string ToString()
         {
-            if (TargetValue.HasValue)
-            {
-                return $"Target: {Target} TargetValue: {TargetValue.Value} at: {Current}";
-            }
-            return $"Target: {Target} at: {Current}";
+            return Messages.Target.ToString(this);
         }
 
         /// <summary>
@@ -70,10 +73,10 @@ namespace QuantConnect.Optimizer.Objectives
         {
             if (string.IsNullOrEmpty(jsonBacktestResult))
             {
-                throw new ArgumentNullException(nameof(jsonBacktestResult), "Target.MoveAhead: backtest result can not be null or empty.");
+                throw new ArgumentNullException(nameof(jsonBacktestResult), $"Target.MoveAhead(): {Messages.OptimizerObjectivesCommon.NullOrEmptyBacktestResult}");
             }
 
-            var token = JObject.Parse(jsonBacktestResult).SelectToken(Target);
+            var token = GetTokenInJsonBacktest(jsonBacktestResult, Target);
             if (token == null)
             {
                 return false;
@@ -98,6 +101,31 @@ namespace QuantConnect.Optimizer.Objectives
             {
                 Reached?.Invoke(this, EventArgs.Empty);
             }
+        }
+
+        public static JToken GetTokenInJsonBacktest(string jsonBacktestResult, string target)
+        {
+            var jObject = JObject.Parse(jsonBacktestResult);
+            var path = target.Replace("[", string.Empty, StringComparison.InvariantCultureIgnoreCase)
+                .Replace("]", string.Empty, StringComparison.InvariantCultureIgnoreCase)
+                .Replace("\'", string.Empty, StringComparison.InvariantCultureIgnoreCase).Split(".");
+            JToken token = null;
+            foreach (var key in path)
+            {
+                if (jObject.TryGetValue(key, StringComparison.OrdinalIgnoreCase, out token))
+                {
+                    if (token is not JValue)
+                    {
+                        jObject = token.ToObject<JObject>();
+                    }
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            return token;
         }
 
         private bool IsComplied() => TargetValue.HasValue && Current.HasValue && (TargetValue.Value == Current.Value || Extremum.Better(TargetValue.Value, Current.Value));

@@ -37,7 +37,19 @@ namespace QuantConnect.Data.Auxiliary
         /// The cached refresh period for the factor files
         /// </summary>
         /// <remarks>Exposed for testing</remarks>
-        protected virtual TimeSpan CacheRefreshPeriod => TimeSpan.FromDays(1);
+        protected virtual TimeSpan CacheRefreshPeriod
+        {
+            get
+            {
+                var dueTime = Time.GetNextLiveAuxiliaryDataDueTime();
+                if (dueTime > TimeSpan.FromMinutes(10))
+                {
+                    // Clear the cache before the auxiliary due time to avoid race conditions with consumers
+                    return dueTime - TimeSpan.FromMinutes(10);
+                }
+                return dueTime;
+            }
+        }
 
         /// <summary>
         /// Creates a new instance of the <see cref="LocalZipFactorFileProvider"/> class.
@@ -68,7 +80,7 @@ namespace QuantConnect.Data.Auxiliary
         }
 
         /// <summary>
-        /// Gets a <see cref="FactorFile"/> instance for the specified symbol, or null if not found
+        /// Gets a <see cref="FactorFile{T}"/> instance for the specified symbol, or null if not found
         /// </summary>
         /// <param name="symbol">The security's symbol whose factor file we seek</param>
         /// <returns>The resolved factor file, or null if not found</returns>
@@ -141,12 +153,12 @@ namespace QuantConnect.Data.Auxiliary
                 }
 
                 // Otherwise we will search back another day
-                Log.Debug($"LocalZipFactorFileProvider.Get(): No factor file found for date {date.ToShortDateString()}");
+                Log.Debug($"LocalZipFactorFileProvider.Get({market}): No factor file found for date {date.ToShortDateString()}");
 
                 // prevent infinite recursion if something is wrong
                 if (count++ > 7)
                 {
-                    throw new InvalidOperationException($"LocalZipFactorFileProvider.Get(): Could not find any factor files going all the way back to {date}");
+                    throw new InvalidOperationException($"LocalZipFactorFileProvider.Get(): Could not find any factor files going all the way back to {date} for {market}");
                 }
 
                 date = date.AddDays(-1);

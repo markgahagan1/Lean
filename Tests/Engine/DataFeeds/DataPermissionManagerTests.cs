@@ -54,7 +54,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             var result = AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus);
 
@@ -73,7 +72,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
             var result = AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus,
                 setupHandler: "TestInvalidConfigurationSetupHandler");
@@ -98,7 +96,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             public override void Initialize()
             {
                 Count++;
+                #pragma warning disable CS0618
                 History("SPY", 1, Resolution.Tick).ToList();
+                #pragma warning restore CS0618
                 Count++;
             }
         }

@@ -58,7 +58,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var realTimeHandler = new BacktestingRealTimeHandler();
             var resultHandler = new TestResultHandler();
             Assert.IsFalse(setupHandler.Setup(new SetupHandlerParameters(_dataManager.UniverseSelection, _algorithm, null, packet,
-                resultHandler, null, realTimeHandler, null, TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider)));
+                resultHandler, null, realTimeHandler, TestGlobals.DataCacheProvider, TestGlobals.MapFileProvider)));
 
             resultHandler.Exit();
             realTimeHandler.Exit();
@@ -76,7 +76,7 @@ namespace QuantConnect.Tests.Engine.Setup
                 SetStartDate(2018, 08, 17);
                 SetEndDate(2021, 11, 15);
 
-                // this will fail later because due to default crypto market being GDAX there is no conversion rate route
+                // this will fail later because due to default crypto market being Coinbase there is no conversion rate route
                 var symbols = new[] { "ADAUSDT", "BNBUSDT", "BTCUSDT", "ETHUSDT", "LTCUSDT", "SOLUSDT" }
                     .Select(ticker => QuantConnect.Symbol.Create(ticker, SecurityType.Crypto, Market.Binance));
                 SetUniverseSelection(new ManualUniverseSelectionModel(symbols));

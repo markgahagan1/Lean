@@ -15,12 +15,12 @@
 */
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
@@ -34,18 +34,18 @@ namespace QuantConnect.Lean.Engine.DataFeeds
     /// </summary>
     public class DataManager : IAlgorithmSubscriptionManager, IDataFeedSubscriptionManager, IDataManager
     {
-        private readonly IAlgorithmSettings _algorithmSettings;
         private readonly IDataFeed _dataFeed;
         private readonly MarketHoursDatabase _marketHoursDatabase;
         private readonly ITimeKeeper _timeKeeper;
         private readonly bool _liveMode;
+        private bool _sentUniverseScheduleWarning;
         private readonly IRegisteredSecurityDataTypesProvider _registeredTypesProvider;
         private readonly IDataPermissionManager _dataPermissionManager;
+        private List<SubscriptionDataConfig> _subscriptionDataConfigsEnumerator;
 
         /// There is no ConcurrentHashSet collection in .NET,
         /// so we use ConcurrentDictionary with byte value to minimize memory usage
-        private readonly ConcurrentDictionary<SubscriptionDataConfig, SubscriptionDataConfig> _subscriptionManagerSubscriptions
-            = new ConcurrentDictionary<SubscriptionDataConfig, SubscriptionDataConfig>();
+        private readonly Dictionary<SubscriptionDataConfig, SubscriptionDataConfig> _subscriptionManagerSubscriptions = new();
 
         /// <summary>
         /// Event fired when a new subscription is added
@@ -73,7 +73,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _dataFeed = dataFeed;
             UniverseSelection = universeSelection;
             UniverseSelection.SetDataManager(this);
-            _algorithmSettings = algorithm.Settings;
             AvailableDataTypes = SubscriptionManager.DefaultDataTypes();
             _timeKeeper = timeKeeper;
             _marketHoursDatabase = marketHoursDatabase;
@@ -109,6 +108,61 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                                     new SecurityCache()
                                  );
                             }
+
+                            // Let's adjust the start time to the previous tradable date
+                            // so universe selection always happens right away at the start of the algorithm.
+                            var universeType = universe.GetType();
+                            if (
+                                // We exclude the OptionChainUniverse because their selection in live trading is based on having a full bar
+                                // of the underlying. In the future, option chain universe file-based selection will be improved
+                                // in order to avoid this.
+                                (universeType != typeof(OptionChainUniverse) || config.Symbol.SecurityType != SecurityType.FutureOption) &&
+                                // We exclude the UserDefinedUniverse because their selection already happens at the algorithm start time.
+                                // For instance, ETFs universe selection depends its first trigger time to be before the equity universe
+                                // (the UserDefinedUniverse), because the ETFs are EndTime-indexed and that would make their first selection
+                                // time to be before the algorithm start time, with the EndTime being the algorithms's start date,
+                                // and both the Equity and the ETFs constituents first selection to happen together.
+                                !universeType.IsAssignableTo(typeof(UserDefinedUniverse)) &&
+                                // We exclude the ScheduledUniverse because it's already scheduled to run at a specific time.
+                                // Adjusting the start time would cause the first selection trigger time to be before the algorithm start time,
+                                // making the selection to be triggered at the first algorithm time, which would be the exact StartDate.
+                                universeType != typeof(ScheduledUniverse))
+                            {
+                                const int maximumLookback = 60;
+                                var loopCount = 0;
+                                var startLocalTime = start.ConvertFromUtc(security.Exchange.TimeZone);
+                                if (universe.UniverseSettings.Schedule.Initialized)
+                                {
+                                    do
+                                    {
+                                        // determine if there's a scheduled selection time at the current start local time date, note that next
+                                        // we get the previous day of the first scheduled date we find, so we are sure the data is available to trigger selection
+                                        if (universe.UniverseSettings.Schedule.Get(startLocalTime.Date, startLocalTime.Date).Any())
+                                        {
+                                            break;
+                                        }
+                                        startLocalTime = startLocalTime.AddDays(-1);
+                                        if (++loopCount >= maximumLookback)
+                                        {
+                                            // fallback to the original, we found none
+                                            startLocalTime = algorithm.UtcTime.ConvertFromUtc(security.Exchange.TimeZone);
+                                            if (!_sentUniverseScheduleWarning)
+                                            {
+                                                // just in case
+                                                _sentUniverseScheduleWarning = true;
+                                                algorithm.Debug($"Warning: Found no valid start time for scheduled universe, will use default");
+                                            }
+                                        }
+                                    } while (loopCount < maximumLookback);
+                                }
+
+                                startLocalTime = Time.GetStartTimeForTradeBars(security.Exchange.Hours, startLocalTime,
+                                    // disable universe selection on extended market hours, for example futures/index options have a sunday pre market we are not interested on
+                                    Time.OneDay, 1, extendedMarketHours: false, config.DataTimeZone,
+                                    LeanData.UseDailyStrictEndTimes(algorithm.Settings, config.Type, security.Symbol, Time.OneDay, security.Exchange.Hours));
+                                start = startLocalTime.ConvertToUtc(security.Exchange.TimeZone);
+                            }
+
                             AddSubscription(
                                 new SubscriptionRequest(true,
                                     universe,
@@ -135,6 +189,54 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         throw new NotImplementedException("The specified action is not implemented: " + args.Action);
                 }
             };
+
+            DataFeedSubscriptions = new SubscriptionCollection();
+            if (!_liveMode)
+            {
+                DataFeedSubscriptions.FillForwardResolutionChanged += (object sender, FillForwardResolutionChangedEvent changedEvent) =>
+                {
+                    var requests = DataFeedSubscriptions
+                        // we don't fill forward tick resolution so we don't need to touch their subscriptions
+                        .Where(subscription => subscription.Configuration.FillDataForward && subscription.Configuration.Resolution != Resolution.Tick)
+                        .SelectMany(subscription => subscription.SubscriptionRequests)
+                        .ToList();
+
+                    if(requests.Count > 0)
+                    {
+                        Log.Trace($"DataManager(): Fill forward resolution has changed from {changedEvent.Old} to {changedEvent.New} at utc: {algorithm.UtcTime}. " +
+                            $"Restarting {requests.Count} subscriptions...");
+
+                        // disable reentry while we remove and re add
+                        DataFeedSubscriptions.FreezeFillForwardResolution(true);
+
+                        // remove
+                        foreach (var request in requests)
+                        {
+                            // force because we want them actually removed even if still a member of the universe, because the FF res changed
+                            // which means we will drop any data points that could be in the next potential slice being created
+                            RemoveSubscriptionInternal(request.Configuration, universe: request.Universe, forceSubscriptionRemoval: true);
+                        }
+
+                        // re add
+                        foreach (var request in requests)
+                        {
+                            // If it is an add we will set time 1 tick ahead to properly sync data
+                            // with next timeslice, avoid emitting now twice.
+                            // We do the same in the 'TimeTriggeredUniverseSubscriptionEnumeratorFactory' when handling changes
+                            var startUtc = algorithm.UtcTime;
+                            // If the algorithm is not initialized (locked) the request start time can be even before the algorithm start time,
+                            // like in the case of universe requests that are scheduled to run at a specific time in the past for immediate selection.
+                            if (!algorithm.GetLocked() && request.StartTimeUtc < startUtc)
+                            {
+                                startUtc = request.StartTimeUtc;
+                            }
+                            AddSubscription(new SubscriptionRequest(request, startTimeUtc: startUtc.AddTicks(1)));
+                        }
+
+                        DataFeedSubscriptions.FreezeFillForwardResolution(false);
+                    }
+                };
+            }
         }
 
         #region IDataFeedSubscriptionManager
@@ -142,7 +244,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Gets the data feed subscription collection
         /// </summary>
-        public SubscriptionCollection DataFeedSubscriptions { get; } = new SubscriptionCollection();
+        public SubscriptionCollection DataFeedSubscriptions { get; }
 
         /// <summary>
         /// Will remove all current <see cref="Subscription"/>
@@ -171,9 +273,15 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>True if the subscription was created and added successfully, false otherwise</returns>
         public bool AddSubscription(SubscriptionRequest request)
         {
-            // guarantee the configuration is present in our config collection
-            // this is related to GH issue 3877: where we added a configuration which we also removed
-            _subscriptionManagerSubscriptions.TryAdd(request.Configuration, request.Configuration);
+            lock (_subscriptionManagerSubscriptions)
+            {
+                // guarantee the configuration is present in our config collection
+                // this is related to GH issue 3877: where we added a configuration which we also removed
+                if(_subscriptionManagerSubscriptions.TryAdd(request.Configuration, request.Configuration))
+                {
+                    _subscriptionDataConfigsEnumerator = null;
+                }
+            }
 
             Subscription subscription;
             if (DataFeedSubscriptions.TryGetValue(request.Configuration, out subscription))
@@ -182,6 +290,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 subscription.AddSubscriptionRequest(request);
                 // only result true if the existing subscription is internal, we actually added something from the users perspective
                 return subscription.Configuration.IsInternalFeed;
+            }
+
+            if (request.Configuration.DataNormalizationMode == DataNormalizationMode.ScaledRaw)
+            {
+                throw new InvalidOperationException($"{DataNormalizationMode.ScaledRaw} normalization mode only intended for history requests.");
             }
 
             // before adding the configuration to the data feed let's assert it's valid
@@ -223,6 +336,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>True if the subscription was successfully removed, false otherwise</returns>
         public bool RemoveSubscription(SubscriptionDataConfig configuration, Universe universe = null)
         {
+            return RemoveSubscriptionInternal(configuration, universe, forceSubscriptionRemoval: false);
+        }
+
+        /// <summary>
+        /// Removes the <see cref="Subscription"/>, if it exists
+        /// </summary>
+        /// <param name="configuration">The <see cref="SubscriptionDataConfig"/> of the subscription to remove</param>
+        /// <param name="universe">Universe requesting to remove <see cref="Subscription"/>.
+        /// Default value, null, will remove all universes</param>
+        /// <param name="forceSubscriptionRemoval">We force the subscription removal by marking it as removed from universe, so that all it's data is dropped</param>
+        /// <returns>True if the subscription was successfully removed, false otherwise</returns>
+        private bool RemoveSubscriptionInternal(SubscriptionDataConfig configuration, Universe universe, bool forceSubscriptionRemoval)
+        {
             // remove the subscription from our collection, if it exists
             Subscription subscription;
 
@@ -248,6 +374,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                     RemoveSubscriptionDataConfig(subscription);
 
+                    if (forceSubscriptionRemoval)
+                    {
+                        subscription.MarkAsRemovedFromUniverse();
+                    }
+
                     if (_liveMode)
                     {
                         Log.Trace($"DataManager.RemoveSubscription(): Removed {configuration}");
@@ -266,8 +397,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 // a universe requested removal of a subscription which wasn't present anymore, this can happen when a subscription ends
                 // it will get removed from the data feed subscription list, but the configuration will remain until the universe removes it
                 // why? the effect I found is that the fill models are using these subscriptions to determine which data they could use
-                SubscriptionDataConfig config;
-                _subscriptionManagerSubscriptions.TryRemove(configuration, out config);
+                lock (_subscriptionManagerSubscriptions)
+                {
+                    if (_subscriptionManagerSubscriptions.Remove(configuration))
+                    {
+                        _subscriptionDataConfigsEnumerator = null;
+                    }
+                }
             }
             return false;
         }
@@ -297,8 +433,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Gets all the current data config subscriptions that are being processed for the SubscriptionManager
         /// </summary>
-        public IEnumerable<SubscriptionDataConfig> SubscriptionManagerSubscriptions =>
-            _subscriptionManagerSubscriptions.Select(x => x.Key);
+        public IEnumerable<SubscriptionDataConfig> SubscriptionManagerSubscriptions
+        {
+            get
+            {
+                lock (_subscriptionManagerSubscriptions)
+                {
+                    if(_subscriptionDataConfigsEnumerator == null)
+                    {
+                        _subscriptionDataConfigsEnumerator = _subscriptionManagerSubscriptions.Values.ToList();
+                    }
+                    return _subscriptionDataConfigsEnumerator;
+                }
+            }
+        }
 
         /// <summary>
         /// Gets existing or adds new <see cref="SubscriptionDataConfig" />
@@ -306,7 +454,15 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>Returns the SubscriptionDataConfig instance used</returns>
         public SubscriptionDataConfig SubscriptionManagerGetOrAdd(SubscriptionDataConfig newConfig)
         {
-            var config = _subscriptionManagerSubscriptions.GetOrAdd(newConfig, newConfig);
+            SubscriptionDataConfig config;
+            lock (_subscriptionManagerSubscriptions)
+            {
+                if (!_subscriptionManagerSubscriptions.TryGetValue(newConfig, out config))
+                {
+                    _subscriptionManagerSubscriptions[newConfig] = config = newConfig;
+                    _subscriptionDataConfigsEnumerator = null;
+                }
+            }
 
             // if the reference is not the same, means it was already there and we did not add anything new
             if (!ReferenceEquals(config, newConfig))
@@ -320,24 +476,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
             else
             {
-                // for performance, only count if we are above the limit
-                if (SubscriptionManagerCount() > _algorithmSettings.DataSubscriptionLimit)
-                {
-                    // count data subscriptions by symbol, ignoring multiple data types.
-                    // this limit was added due to the limits IB places on number of subscriptions
-                    var uniqueCount = SubscriptionManagerSubscriptions
-                        .Where(x => !x.Symbol.IsCanonical())
-                        .DistinctBy(x => x.Symbol.Value)
-                        .Count();
-
-                    if (uniqueCount > _algorithmSettings.DataSubscriptionLimit)
-                    {
-                        throw new Exception(
-                            $"The maximum number of concurrent market data subscriptions was exceeded ({_algorithmSettings.DataSubscriptionLimit})." +
-                            "Please reduce the number of symbols requested or increase the limit using Settings.DataSubscriptionLimit.");
-                    }
-                }
-
                 // add the time zone to our time keeper
                 _timeKeeper.AddTimeZone(newConfig.ExchangeTimeZone);
             }
@@ -355,7 +493,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             // the subscription could of ended but might still be part of the universe
             if (subscription.RemovedFromUniverse.Value)
             {
-                _subscriptionManagerSubscriptions.TryRemove(subscription.Configuration, out var _);
+                lock (_subscriptionManagerSubscriptions)
+                {
+                    if (_subscriptionManagerSubscriptions.Remove(subscription.Configuration))
+                    {
+                        _subscriptionDataConfigsEnumerator = null;
+                    }
+                }
             }
         }
 
@@ -364,7 +508,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// </summary>
         public int SubscriptionManagerCount()
         {
-            return _subscriptionManagerSubscriptions.Skip(0).Count();
+            lock (_subscriptionManagerSubscriptions)
+            {
+                return _subscriptionManagerSubscriptions.Count;
+            }
         }
 
         #region ISubscriptionDataConfigService
@@ -418,8 +565,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             uint contractDepthOffset = 0
             )
         {
-            var dataTypes = subscriptionDataTypes ??
-                LookupSubscriptionConfigDataTypes(symbol.SecurityType, resolution ?? Resolution.Minute, symbol.IsCanonical());
+            var dataTypes = subscriptionDataTypes;
+            if(dataTypes == null)
+            {
+                if (symbol.SecurityType == SecurityType.Base && SecurityIdentifier.TryGetCustomDataTypeInstance(symbol.ID.Symbol, out var type))
+                {
+                    // we've detected custom data request if we find a type let's use it
+                    dataTypes = new List<Tuple<Type, TickType>> { new Tuple<Type, TickType>(type, TickType.Trade) };
+                }
+                else
+                {
+                    dataTypes = LookupSubscriptionConfigDataTypes(symbol.SecurityType, resolution ?? Resolution.Minute, symbol.IsCanonical());
+                }
+            }
 
             if (!dataTypes.Any())
             {
@@ -520,6 +678,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <param name="resolution">The resolution of the data requested</param>
         /// <param name="isCanonical">Indicates whether the security is Canonical (future and options)</param>
         /// <returns>Types that should be added to the <see cref="SubscriptionDataConfig" /></returns>
+        /// <remarks>TODO: data type additions are very related to ticktype and should be more generic/independent of each other</remarks>
         public List<Tuple<Type, TickType>> LookupSubscriptionConfigDataTypes(
             SecurityType symbolSecurityType,
             Resolution resolution,
@@ -528,6 +687,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
             if (isCanonical)
             {
+                if (symbolSecurityType != SecurityType.FutureOption && symbolSecurityType.IsOption())
+                {
+                    return new List<Tuple<Type, TickType>> { new Tuple<Type, TickType>(typeof(OptionUniverse), TickType.Quote) };
+                }
+
                 return new List<Tuple<Type, TickType>> { new Tuple<Type, TickType>(typeof(ZipEntryName), TickType.Quote) };
             }
 
@@ -535,18 +699,27 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 // Equities will only look for trades in case of low resolutions.
                 .Where(tickType => LeanData.IsValidConfiguration(symbolSecurityType, resolution, tickType));
 
-            return availableDataType
+            var result = availableDataType
                 .Select(tickType => new Tuple<Type, TickType>(LeanData.GetDataType(resolution, tickType), tickType)).ToList();
+
+            if(symbolSecurityType == SecurityType.CryptoFuture)
+            {
+                result.Add(new Tuple<Type, TickType>(typeof(MarginInterestRate), TickType.Quote));
+            }
+            return result;
         }
 
         /// <summary>
         /// Gets a list of all registered <see cref="SubscriptionDataConfig"/> for a given <see cref="Symbol"/>
         /// </summary>
         /// <remarks>Will not return internal subscriptions by default</remarks>
-        public List<SubscriptionDataConfig> GetSubscriptionDataConfigs(Symbol symbol, bool includeInternalConfigs = false)
+        public List<SubscriptionDataConfig> GetSubscriptionDataConfigs(Symbol symbol = null, bool includeInternalConfigs = false)
         {
-            return SubscriptionManagerSubscriptions.Where(x => x.Symbol == symbol
-                                                               && (includeInternalConfigs || !x.IsInternalFeed)).ToList();
+            lock (_subscriptionManagerSubscriptions)
+            {
+                return _subscriptionManagerSubscriptions.Keys.Where(config => (includeInternalConfigs || !config.IsInternalFeed)
+                                                                && (symbol == null || config.Symbol.ID == symbol.ID)).ToList();
+            }
         }
 
         #endregion

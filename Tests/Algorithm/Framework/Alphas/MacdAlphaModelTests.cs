@@ -45,9 +45,8 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
             var period = TimeSpan.FromDays(12);
             return new[]
             {
-                Insight.Price(Symbols.SPY, period, InsightDirection.Flat),
+                Insight.Price(Symbols.SPY, period, InsightDirection.Up),
                 Insight.Price(Symbols.SPY, period, InsightDirection.Down),
-                Insight.Price(Symbols.SPY, period, InsightDirection.Flat),
                 Insight.Price(Symbols.SPY, period, InsightDirection.Up)
             };
         }
@@ -88,8 +87,6 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
                 Assert.IsTrue(macd.IsReady);
                 Assert.NotZero(macd.Samples);
             }
-
-            ZipCacheProvider.DisposeSafely();
         }
 
         [Test]
@@ -124,8 +121,6 @@ namespace QuantConnect.Tests.Algorithm.Framework.Alphas
                     Assert.IsTrue(macd.IsReady.IsTrue());
                     Assert.NotZero(((PyObject)macd.Samples).GetAndDispose<int>());
                 }
-
-                ZipCacheProvider.DisposeSafely();
             }
         }
     }

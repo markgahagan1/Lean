@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -23,12 +23,43 @@ namespace QuantConnect.Data.Auxiliary
     /// </summary>
     public class ZipEntryName : BaseData
     {
+        private DateTime _endTime;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="ZipEntryName"/> class
         /// </summary>
         public ZipEntryName()
         {
             DataType = MarketDataType.Auxiliary;
+        }
+
+        /// <summary>
+        /// Gets or sets the end time of this data
+        /// </summary>
+        public override DateTime EndTime
+        {
+            get
+            {
+                if (_endTime == default)
+                {
+                    // to be user friendly let's return Time if not set, like BaseData does
+                    return Time;
+                }
+                return _endTime;
+            }
+            set
+            {
+                _endTime = value;
+            }
+        }
+
+        /// <summary>
+        /// Indicates whether this contains data that should be stored in the security cache
+        /// </summary>
+        /// <returns>Whether this contains data that should be stored in the security cache</returns>
+        public override bool ShouldCacheToSecurity()
+        {
+            return false;
         }
 
         /// <summary>

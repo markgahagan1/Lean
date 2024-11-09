@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -30,7 +30,7 @@ namespace QuantConnect.Securities.Equity
         /// <summary>
         /// The default number of days required to settle an equity sale
         /// </summary>
-        public const int DefaultSettlementDays = 3;
+        public const int DefaultSettlementDays = 2;
 
         /// <summary>
         /// The default time of day for settlement
@@ -48,7 +48,8 @@ namespace QuantConnect.Securities.Equity
             get
             {
                 var shortableQuantity = ShortableProvider.ShortableQuantity(Symbol, LocalTime);
-                return shortableQuantity == null || shortableQuantity == 0m;
+                // null means we don't have the data
+                return shortableQuantity == null || shortableQuantity > 0m;
             }
         }
 
@@ -84,14 +85,15 @@ namespace QuantConnect.Securities.Equity
                 new SecurityPortfolioModel(),
                 new EquityFillModel(),
                 new InteractiveBrokersFeeModel(),
-                new ConstantSlippageModel(0m),
+                NullSlippageModel.Instance,
                 new ImmediateSettlementModel(),
                 Securities.VolatilityModel.Null,
                 new SecurityMarginModel(2m),
                 new EquityDataFilter(),
                 new AdjustedPriceVariationModel(),
                 currencyConverter,
-                registeredTypes
+                registeredTypes,
+                Securities.MarginInterestRateModel.Null
                 )
         {
             Holdings = new EquityHolding(this, currencyConverter);
@@ -117,14 +119,15 @@ namespace QuantConnect.Securities.Equity
                 new SecurityPortfolioModel(),
                 new EquityFillModel(),
                 new InteractiveBrokersFeeModel(),
-                new ConstantSlippageModel(0m),
+                NullSlippageModel.Instance,
                 new ImmediateSettlementModel(),
                 Securities.VolatilityModel.Null,
                 new SecurityMarginModel(2m),
                 new EquityDataFilter(),
                 new AdjustedPriceVariationModel(),
                 currencyConverter,
-                registeredTypes
+                registeredTypes,
+                Securities.MarginInterestRateModel.Null
                 )
         {
             Holdings = new EquityHolding(this, currencyConverter);

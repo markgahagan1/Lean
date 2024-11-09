@@ -16,6 +16,7 @@
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders.Fees;
+using QuantConnect.Securities;
 using System;
 using System.Collections.Generic;
 
@@ -43,8 +44,11 @@ namespace QuantConnect.Algorithm.CSharp
             SetEndDate(2014,4,7);
             SetCash(50000);
 
-            // Set the security initializer with zero fees
-            SetSecurityInitializer(x => x.SetFeeModel(new ConstantFeeModel(0)));
+            // Set the security initializer with zero fees and price initial seed
+            var securitySeeder = new FuncSecuritySeeder(GetLastKnownPrices);
+            SetSecurityInitializer(new CompositeSecurityInitializer(
+                new FuncSecurityInitializer(x => x.SetFeeModel(new ConstantFeeModel(0))),
+                new FuncSecurityInitializer(security => securitySeeder.SeedSecurity(security))));
 
             AddUniverse("MyUniverse", Resolution.Daily, SelectionFunction);
         }
@@ -82,65 +86,55 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 143;
+        public long DataPoints => 135;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 30;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "24"},
-            {"Average Win", "0.18%"},
-            {"Average Loss", "-0.18%"},
-            {"Compounding Annual Return", "-8.344%"},
-            {"Drawdown", "0.900%"},
-            {"Expectancy", "-0.161"},
-            {"Net Profit", "-0.357%"},
-            {"Sharpe Ratio", "-1.605"},
-            {"Probabilistic Sharpe Ratio", "24.427%"},
-            {"Loss Rate", "58%"},
-            {"Win Rate", "42%"},
-            {"Profit-Loss Ratio", "1.01"},
-            {"Alpha", "-0.054"},
-            {"Beta", "0.087"},
-            {"Annual Standard Deviation", "0.038"},
+            {"Total Orders", "12"},
+            {"Average Win", "0.34%"},
+            {"Average Loss", "-0.14%"},
+            {"Compounding Annual Return", "4.586%"},
+            {"Drawdown", "0.700%"},
+            {"Expectancy", "0.158"},
+            {"Start Equity", "50000"},
+            {"End Equity", "50090.17"},
+            {"Net Profit", "0.180%"},
+            {"Sharpe Ratio", "5.991"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "99.393%"},
+            {"Loss Rate", "67%"},
+            {"Win Rate", "33%"},
+            {"Profit-Loss Ratio", "2.47"},
+            {"Alpha", "0.17"},
+            {"Beta", "0.029"},
+            {"Annual Standard Deviation", "0.028"},
             {"Annual Variance", "0.001"},
-            {"Information Ratio", "0.336"},
-            {"Tracking Error", "0.096"},
-            {"Treynor Ratio", "-0.711"},
+            {"Information Ratio", "2.734"},
+            {"Tracking Error", "0.098"},
+            {"Treynor Ratio", "5.803"},
             {"Total Fees", "$0.00"},
-            {"Estimated Strategy Capacity", "$49000000.00"},
+            {"Estimated Strategy Capacity", "$99000000.00"},
             {"Lowest Capacity Asset", "AIG R735QTJ8XC9X"},
-            {"Fitness Score", "0.063"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.244"},
-            {"Return Over Maximum Drawdown", "-9.47"},
-            {"Portfolio Turnover", "0.368"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "aee6ea02ba87ef33de31c0f5c0ededae"}
+            {"Portfolio Turnover", "15.96%"},
+            {"OrderListHash", "d915ae36ce856457b32ebbfce4581281"}
         };
     }
 }

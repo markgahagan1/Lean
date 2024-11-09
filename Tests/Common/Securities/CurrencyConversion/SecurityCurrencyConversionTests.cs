@@ -34,7 +34,7 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
             var existingSecurities = new List<Security>(0);
             var potentialSymbols = new List<Symbol> { Symbols.EURUSD };
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub();
             subscriptions.SetDataManager(dataManager);
 
@@ -65,7 +65,7 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
             var existingSecurities = new List<Security>(0);
             var potentialSymbols = new List<Symbol> { Symbols.BTCUSD, Symbols.EURUSD };
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub();
             subscriptions.SetDataManager(dataManager);
 
@@ -97,7 +97,7 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
             var existingSecurities = new List<Security> { CreateSecurity(Symbols.EURUSD) };
             var potentialSymbols = new List<Symbol> { Symbols.EURUSD };
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub();
             subscriptions.SetDataManager(dataManager);
 
@@ -128,7 +128,7 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
             var existingSecurities = new List<Security> { CreateSecurity(Symbols.BTCUSD) };
             var potentialSymbols = new List<Symbol> { Symbols.BTCUSD, Symbols.EURUSD };
 
-            var subscriptions = new SubscriptionManager();
+            var subscriptions = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub();
             subscriptions.SetDataManager(dataManager);
 
@@ -186,7 +186,8 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
 
             existingSecurities[0].SetMarketPrice(new Tick { Value = 10m });
 
-            Assert.AreEqual(expectedRate, currencyConversion.Update());
+            currencyConversion.Update();
+            Assert.AreEqual(expectedRate, currencyConversion.ConversionRate);
         }
 
         [TestCaseSource(nameof(twoLegCases))]
@@ -213,7 +214,8 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
             existingSecurities[0].SetMarketPrice(new Tick { Value = 15m });
             existingSecurities[1].SetMarketPrice(new Tick { Value = 25m });
 
-            Assert.AreEqual(expectedRate, currencyConversion.Update());
+            currencyConversion.Update();
+            Assert.AreEqual(expectedRate, currencyConversion.ConversionRate);
         }
 
         [Test]
@@ -228,7 +230,8 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
                 new List<Symbol>(0),
                 CreateSecurity);
 
-            Assert.AreEqual(0m, currencyConversion.Update());
+            currencyConversion.Update();
+            Assert.AreEqual(0m, currencyConversion.ConversionRate);
         }
 
         [Test]
@@ -249,7 +252,8 @@ namespace QuantConnect.Tests.Common.Securities.CurrencyConversion
 
             existingSecurities[0].SetMarketPrice(new Tick { Value = 15m });
 
-            Assert.AreEqual(0m, currencyConversion.Update());
+            currencyConversion.Update();
+            Assert.AreEqual(0m, currencyConversion.ConversionRate);
         }
 
         [Test]

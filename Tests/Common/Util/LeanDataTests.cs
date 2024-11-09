@@ -15,11 +15,15 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Data;
+using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Securities;
 using QuantConnect.Util;
 using Bitcoin = QuantConnect.Algorithm.CSharp.LiveTradingFeaturesAlgorithm.Bitcoin;
 
@@ -28,6 +32,8 @@ namespace QuantConnect.Tests.Common.Util
     [TestFixture]
     public class LeanDataTests
     {
+        private static DateTime _aggregationTime = new DateTime(2020, 1, 5, 12, 0, 0);
+
         [SetUp]
         public void SetUp()
         {
@@ -38,6 +44,43 @@ namespace QuantConnect.Tests.Common.Util
         public void TearDown()
         {
             SymbolCache.Clear();
+        }
+
+        [TestCase(16, false, "20240506 09:30", "06:30")]
+        [TestCase(10, false, "20240506 09:30", "06:30")]
+        [TestCase(10, true, "20240506 04:00", "16:00")]
+        [TestCase(5, true, "20240506 04:00", "16:00")]
+        [TestCase(19, true, "20240506 04:00", "16:00")]
+        public void DailyCalendarInfo(int hours, bool extendedMarketHours, string startTime, string timeSpan)
+        {
+            var symbol = Symbols.SPY;
+            var targetTime = new DateTime(2024, 5, 6).AddHours(hours);
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+            var result = LeanData.GetDailyCalendar(targetTime, exchangeHours, extendedMarketHours);
+
+            var expected = new CalendarInfo(DateTime.ParseExact(startTime, DateFormat.TwelveCharacter, CultureInfo.InvariantCulture),
+                TimeSpan.Parse(timeSpan, CultureInfo.InvariantCulture));
+
+            Assert.AreEqual(expected, result);
+        }
+
+        [TestCase(1, "20240506 16:00")] // market closed
+        [TestCase(5, "20240506 16:00")] // pre market
+        [TestCase(10, "20240506 16:00")] // market hours
+        [TestCase(16, "20240507 16:00")] // at the close
+        [TestCase(18, "20240507 16:00")] // post market hours
+        [TestCase(20, "20240507 16:00")] // market closed
+        [TestCase(24 * 5, "20240513 16:00")] // saturday
+        public void GetNextDailyEndTime(int hours, string expectedTime)
+        {
+            var symbol = Symbols.SPY;
+            var targetTime = new DateTime(2024, 5, 6).AddHours(hours);
+            var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.ID.SecurityType);
+            var result = LeanData.GetNextDailyEndTime(symbol, targetTime, exchangeHours);
+
+            var expected = DateTime.ParseExact(expectedTime, DateFormat.TwelveCharacter, CultureInfo.InvariantCulture);
+
+            Assert.AreEqual(expected, result);
         }
 
         [Test, TestCaseSource(nameof(GetLeanDataTestParameters))]
@@ -214,6 +257,21 @@ namespace QuantConnect.Tests.Common.Util
         }
 
         [Test]
+        public void UniversesDataPath()
+        {
+            var path = "equity/usa/universes/etf/spy/20200102.csv";
+            Assert.IsTrue(LeanData.TryParsePath(path, out var symbol, out var date, out var resolution));
+
+            Assert.AreEqual(SecurityType.Base, symbol.SecurityType);
+            Assert.AreEqual(Market.USA, symbol.ID.Market);
+            Assert.AreEqual(Resolution.Daily, resolution);
+            Assert.AreEqual("SPY.ETFConstituentUniverse", symbol.ID.Symbol);
+            Assert.AreEqual(new DateTime(2020, 1, 2), date);
+            Assert.IsTrue(SecurityIdentifier.TryGetCustomDataType(symbol.ID.Symbol, out var dataType));
+            Assert.AreEqual(typeof(ETFConstituentUniverse).Name, dataType);
+        }
+
+        [Test]
         public void IncorrectPaths_CannotBeParsed()
         {
             DateTime date;
@@ -303,6 +361,34 @@ namespace QuantConnect.Tests.Common.Util
             Assert.AreEqual(date.Date, Parse.DateTime("2016-01-01").Date);
         }
 
+        [TestCase("Data\\indexoption\\usa\\minute\\spx\\20210104_quote_european.zip", "SPX", "SPX")]
+        [TestCase("Data\\indexoption\\usa\\minute\\spxw\\20210104_quote_european.zip", "SPXW", "SPX")]
+        [TestCase("Data\\futureoption\\comex\\minute\\og\\20210428\\20210104_quote_american.zip", "OG", "GC")]
+        public void MappedTickersCorreclty(string path, string expectedSymbol, string expectedUnderlying)
+        {
+            Assert.IsTrue(LeanData.TryParsePath(path, out var symbol, out var date, out var resolution));
+
+            Assert.AreEqual(Resolution.Minute, resolution);
+            Assert.AreEqual(expectedSymbol, symbol.ID.Symbol);
+            Assert.AreEqual(expectedUnderlying, symbol.ID.Underlying.Symbol);
+            Assert.AreEqual(new DateTime(2021, 01, 04), date);
+        }
+
+        [TestCase("Data\\indexoption\\usa\\hour\\spx_2021_quote_european", "SPX", SecurityType.IndexOption, Resolution.Hour, 2021)]
+        [TestCase("Data\\indexoption\\usa\\daily\\spx_2014_quote_european", "SPX", SecurityType.IndexOption, Resolution.Daily, 2014)]
+        [TestCase("Data\\option\\usa\\hour\\aapl_2021_quote_american.zip", "AAPL", SecurityType.Option, Resolution.Hour, 2021)]
+        [TestCase("Data\\option\\usa\\daily\\aapl_2014_quote_american.zip", "AAPL", SecurityType.Option, Resolution.Daily, 2014)]
+        public void ParsesHourAndDailyOptionsPathCorrectly(string path, string expectedSymbol, SecurityType expectedSecurityType,
+            Resolution expectedResolution, int expectedYear)
+        {
+            Assert.IsTrue(LeanData.TryParsePath(path, out var symbol, out var date, out var resolution));
+
+            Assert.AreEqual(expectedSecurityType, symbol.SecurityType);
+            Assert.AreEqual(expectedResolution, resolution);
+            Assert.AreEqual(expectedSymbol, symbol.ID.Symbol);
+            Assert.AreEqual(new DateTime(expectedYear, 01, 01), date);
+        }
+
         [TestCase("Data\\alternative\\estimize\\consensus\\aapl.csv", "aapl", null)]
         [TestCase("Data\\alternative\\psychsignal\\aapl\\20161007.zip", "aapl", "2016-10-07")]
         [TestCase("Data\\alternative\\sec\\aapl\\20161007_8K.zip", "aapl", "2016-10-07")]
@@ -330,27 +416,44 @@ namespace QuantConnect.Tests.Common.Util
             Symbol symbol;
             Resolution resolution;
 
-            var cryptoPath = "Data\\crypto\\gdax\\daily\\btcusd_quote.zip";
+            var cryptoPath = "Data\\crypto\\coinbase\\daily\\btcusd_quote.zip";
             Assert.IsTrue(LeanData.TryParsePath(cryptoPath, out symbol, out date, out resolution));
             Assert.AreEqual(symbol.SecurityType, SecurityType.Crypto);
-            Assert.AreEqual(symbol.ID.Market, Market.GDAX);
+            Assert.AreEqual(symbol.ID.Market, Market.Coinbase);
             Assert.AreEqual(resolution, Resolution.Daily);
             Assert.AreEqual(symbol.ID.Symbol.ToLowerInvariant(), "btcusd");
 
-            cryptoPath = "Data\\crypto\\gdax\\hour\\btcusd_quote.zip";
+            cryptoPath = "Data\\crypto\\coinbase\\hour\\btcusd_quote.zip";
             Assert.IsTrue(LeanData.TryParsePath(cryptoPath, out symbol, out date, out resolution));
             Assert.AreEqual(symbol.SecurityType, SecurityType.Crypto);
-            Assert.AreEqual(symbol.ID.Market, Market.GDAX);
+            Assert.AreEqual(symbol.ID.Market, Market.Coinbase);
             Assert.AreEqual(resolution, Resolution.Hour);
             Assert.AreEqual(symbol.ID.Symbol.ToLowerInvariant(), "btcusd");
 
-            cryptoPath = "Data\\crypto\\gdax\\minute\\btcusd\\20161007_quote.zip";
+            cryptoPath = "Data\\crypto\\coinbase\\minute\\btcusd\\20161007_quote.zip";
             Assert.IsTrue(LeanData.TryParsePath(cryptoPath, out symbol, out date, out resolution));
             Assert.AreEqual(symbol.SecurityType, SecurityType.Crypto);
-            Assert.AreEqual(symbol.ID.Market, Market.GDAX);
+            Assert.AreEqual(symbol.ID.Market, Market.Coinbase);
             Assert.AreEqual(resolution, Resolution.Minute);
             Assert.AreEqual(symbol.ID.Symbol.ToLowerInvariant(), "btcusd");
             Assert.AreEqual(date.Date, Parse.DateTime("2016-10-07").Date);
+        }
+
+        [TestCase("equity/usa/minute/goog/20130102_quote.zip", "GOOG", null, "2004/08/19")]
+        [TestCase("equity/usa/minute/goog/20100102_quote.zip", "GOOG", null, "2004/08/19")]
+        [TestCase("equity/usa/minute/goog/20150102_quote.zip", "GOOG", "GOOCV", "2014/03/27")]
+        [TestCase("equity/usa/minute/spwr/20071223_trade.zip", "SPWR", null, "2005/11/17")]
+        [TestCase("equity/usa/minute/spwra/20101223_trade.zip", "SPWRA", "SPWR", "2005/11/17")]
+        [TestCase("equity/usa/minute/spwr/20141223_trade.zip", "SPWR", "SPWR", "2005/11/17")]
+        [TestCase("option/usa/minute/goog/20151223_openinterest_american.zip", "GOOG", "GOOCV", "2014/03/27")]
+        public void TryParseMapsShouldReturnCorrectSymbol(string path, string expectedTicker, string expectedUnderlyingTicker, DateTime expectedDate)
+        {
+            Assert.IsTrue(LeanData.TryParsePath(path, out var parsedSymbol, out _, out _));
+
+            var symbol = parsedSymbol.HasUnderlying ? parsedSymbol.Underlying : parsedSymbol;
+            Assert.That(symbol.Value, Is.EqualTo(expectedTicker));
+            Assert.That(symbol.ID.Date, Is.EqualTo(expectedDate));
+            Assert.That(symbol.ID.Symbol, Is.EqualTo(expectedUnderlyingTicker ?? expectedTicker));
         }
 
         [TestCase(SecurityType.Base, "alteRNative")]
@@ -446,74 +549,154 @@ namespace QuantConnect.Tests.Common.Util
             Assert.AreEqual("../../../Data/futureoption/comex/minute/og/20200428/20200105_quote_american.zip", optionZipFilePath);
             Assert.AreEqual($"20200105_og_minute_quote_american_{right.ToLower()}_{strike}0000_{expiry:yyyyMMdd}.csv", optionEntryFilePath);
         }
-        
+
         [Test, TestCaseSource(nameof(AggregateTradeBarsTestData))]
         public void AggregateTradeBarsTest(TimeSpan resolution, TradeBar expectedFirstTradeBar)
         {
-            var initialTime = new DateTime(2020, 1, 5, 12, 0, 0);
             var symbol = Symbols.AAPL;
             var initialBars = new[]
             {
-                new TradeBar {Time = initialTime, Open = 10, High = 15, Low = 8, Close = 11, Volume = 50, Period = TimeSpan.FromSeconds(1), Symbol = symbol},
-                new TradeBar {Time = initialTime.Add(TimeSpan.FromSeconds(15)), Open = 13, High = 14, Low = 7, Close = 9, Volume = 150, Period = TimeSpan.FromSeconds(1), Symbol = symbol},
-                new TradeBar {Time = initialTime.Add(TimeSpan.FromMinutes(15)), Open = 11, High = 25, Low = 10, Close = 21, Volume = 90, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
-                new TradeBar {Time = initialTime.Add(TimeSpan.FromHours(6)), Open = 17, High = 19, Low = 12, Close = 11, Volume = 20, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+                new TradeBar {Time = _aggregationTime, Open = 10, High = 15, Low = 8, Close = 11, Volume = 50, Period = TimeSpan.FromSeconds(1), Symbol = symbol},
+                new TradeBar {Time = _aggregationTime.Add(TimeSpan.FromSeconds(15)), Open = 13, High = 14, Low = 7, Close = 9, Volume = 150, Period = TimeSpan.FromSeconds(1), Symbol = symbol},
+                new TradeBar {Time = _aggregationTime.Add(TimeSpan.FromMinutes(15)), Open = 11, High = 25, Low = 10, Close = 21, Volume = 90, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+                new TradeBar {Time = _aggregationTime.Add(TimeSpan.FromHours(6)), Open = 17, High = 19, Low = 12, Close = 11, Volume = 20, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
             };
 
             var aggregated = LeanData.AggregateTradeBars(initialBars, symbol, resolution).ToList();
-            
+
             Assert.True(aggregated.All(i => i.Period == resolution));
+            Assert.True(aggregated.All(i => i.Symbol == symbol));
 
             var firstBar = aggregated.First();
 
             AssertBarsAreEqual(expectedFirstTradeBar, firstBar);
+            Assert.AreEqual(expectedFirstTradeBar.Volume, firstBar.Volume);
+            Assert.AreEqual(expectedFirstTradeBar.Time, firstBar.Time);
+            Assert.AreEqual(expectedFirstTradeBar.EndTime, firstBar.EndTime);
+        }
 
-        }
-        
-        [Test, TestCaseSource(nameof(AggregateQuoteBarsTestData))]
-        public void AggregateQuoteBarsTest(TimeSpan resolution, QuoteBar expectedFirstBar)
+        [Test, TestCaseSource(nameof(AggregateTradeBarsTestData))]
+        public void AggregateTradeBarTicksTest(TimeSpan resolution, TradeBar expectedFirstTradeBar)
         {
-            var initialTime = new DateTime(2020, 1, 5, 12, 0, 0);
-            var symbol = Symbols.AAPL;
-            var initialBars = new[]
-            {
-                new QuoteBar {Time = initialTime, Ask = new Bar {Open = 10, High = 15, Low = 8, Close = 11}, Bid = {Open = 7, High = 14, Low = 5, Close = 10}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
-                new QuoteBar {Time = initialTime.Add(TimeSpan.FromSeconds(15)), Ask = new Bar {Open = 13, High = 14, Low = 7, Close = 9}, Bid = {Open = 10, High = 11, Low = 4, Close = 5}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
-                new QuoteBar {Time = initialTime.Add(TimeSpan.FromMinutes(15)), Ask = new Bar {Open = 11, High = 25, Low = 10, Close = 21}, Bid = {Open = 10, High = 22, Low = 9, Close = 20}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
-                new QuoteBar {Time = initialTime.Add(TimeSpan.FromHours(6)), Ask = new Bar {Open = 17, High = 19, Low = 12, Close = 11}, Bid = {Open = 16, High = 17, Low = 10, Close = 10}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
-            };
-        
-            var aggregated = LeanData.AggregateQuoteBars(initialBars, symbol, resolution).ToList();
-            
-            Assert.True(aggregated.All(i => i.Period == resolution));
-        
-            var firstBar = aggregated.First();
-            
-            AssertBarsAreEqual(expectedFirstBar.Ask, firstBar.Ask);
-            AssertBarsAreEqual(expectedFirstBar.Bid, firstBar.Bid);
-        }
-        
-        [Test, TestCaseSource(nameof(AggregateTickTestData))]
-        public void AggregateTicksTest(TimeSpan resolution, QuoteBar expectedFirstBar)
-        {
-            var initialTime = new DateTime(2020, 1, 5, 12, 0, 0);
             var symbol = Symbols.AAPL;
             var initialTicks = new[]
             {
-                new Tick(initialTime, symbol, string.Empty, string.Empty, 10, 11, 12, 13),
-                new Tick(initialTime.Add(TimeSpan.FromSeconds(1)), symbol, string.Empty, string.Empty, 14, 15, 16, 17),
-                new Tick(initialTime.Add(TimeSpan.FromSeconds(10)), symbol, string.Empty, string.Empty, 18, 19, 20, 21),
-                new Tick(initialTime.Add(TimeSpan.FromSeconds(61)), symbol, string.Empty, string.Empty, 22, 23, 24, 25),
+                new Tick(_aggregationTime, symbol, string.Empty, string.Empty, 50, 10),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(1)), symbol, string.Empty, string.Empty, 60, 7),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(10)), symbol, string.Empty, string.Empty, 89, 15),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(11)), symbol, string.Empty, string.Empty, 1, 9),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(61)), symbol, string.Empty, string.Empty, 9, 21),
+                new Tick(_aggregationTime.Add(TimeSpan.FromMinutes(2)), symbol, string.Empty, string.Empty, 80, 25),
+                new Tick(_aggregationTime.Add(TimeSpan.FromMinutes(20)), symbol, string.Empty, string.Empty, 1, 21),
+                new Tick(_aggregationTime.Add(TimeSpan.FromHours(1)), symbol, string.Empty, string.Empty, 20, 11),
+            };
+
+            var aggregated = LeanData.AggregateTicksToTradeBars(initialTicks, symbol, resolution).ToList();
+
+            Assert.True(aggregated.All(i => i.Period == resolution));
+            Assert.True(aggregated.All(i => i.Symbol == symbol));
+
+            var firstBar = aggregated.First();
+
+            AssertBarsAreEqual(expectedFirstTradeBar, firstBar);
+            Assert.AreEqual(expectedFirstTradeBar.Volume, firstBar.Volume);
+            Assert.AreEqual(expectedFirstTradeBar.Time, firstBar.Time);
+            Assert.AreEqual(expectedFirstTradeBar.EndTime, firstBar.EndTime);
+        }
+
+        [Test, TestCaseSource(nameof(AggregateQuoteBarsTestData))]
+        public void AggregateQuoteBarsTest(TimeSpan resolution, QuoteBar expectedFirstBar)
+        {
+            var symbol = Symbols.AAPL;
+            var initialBars = new[]
+            {
+                new QuoteBar {Time = _aggregationTime, Ask = new Bar {Open = 10, High = 15, Low = 8, Close = 11}, Bid = {Open = 7, High = 14, Low = 5, Close = 10}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+                new QuoteBar {Time = _aggregationTime.Add(TimeSpan.FromSeconds(15)), Ask = new Bar {Open = 13, High = 14, Low = 7, Close = 9}, Bid = {Open = 10, High = 11, Low = 4, Close = 5}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+                new QuoteBar {Time = _aggregationTime.Add(TimeSpan.FromMinutes(15)), Ask = new Bar {Open = 11, High = 25, Low = 10, Close = 21}, Bid = {Open = 10, High = 22, Low = 9, Close = 20}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+                new QuoteBar {Time = _aggregationTime.Add(TimeSpan.FromHours(6)), Ask = new Bar {Open = 17, High = 19, Low = 12, Close = 11}, Bid = {Open = 16, High = 17, Low = 10, Close = 10}, Period = TimeSpan.FromMinutes(1), Symbol = symbol},
+            };
+
+            var aggregated = LeanData.AggregateQuoteBars(initialBars, symbol, resolution).ToList();
+
+            Assert.True(aggregated.All(i => i.Period == resolution));
+            Assert.True(aggregated.All(i => i.Symbol == symbol));
+
+            var firstBar = aggregated.First();
+
+            AssertBarsAreEqual(expectedFirstBar.Ask, firstBar.Ask);
+            AssertBarsAreEqual(expectedFirstBar.Bid, firstBar.Bid);
+            Assert.AreEqual(expectedFirstBar.LastBidSize, firstBar.LastBidSize);
+            Assert.AreEqual(expectedFirstBar.LastAskSize, firstBar.LastAskSize);
+            Assert.AreEqual(expectedFirstBar.Time, firstBar.Time);
+            Assert.AreEqual(expectedFirstBar.EndTime, firstBar.EndTime);
+        }
+
+        [Test, TestCaseSource(nameof(AggregateTickTestData))]
+        public void AggregateTicksTest(TimeSpan resolution, QuoteBar expectedFirstBar)
+        {
+            var symbol = Symbols.AAPL;
+            var initialTicks = new[]
+            {
+                new Tick(_aggregationTime, symbol, string.Empty, string.Empty, 10, 11, 12, 13),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(1)), symbol, string.Empty, string.Empty, 14, 15, 16, 17),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(10)), symbol, string.Empty, string.Empty, 18, 19, 20, 21),
+                new Tick(_aggregationTime.Add(TimeSpan.FromSeconds(61)), symbol, string.Empty, string.Empty, 22, 23, 24, 25),
             };
 
             var aggregated = LeanData.AggregateTicks(initialTicks, symbol, resolution).ToList();
 
             Assert.True(aggregated.All(i => i.Period == resolution));
+            Assert.True(aggregated.All(i => i.Symbol == symbol));
 
             var firstBar = aggregated.First();
 
             AssertBarsAreEqual(expectedFirstBar.Ask, firstBar.Ask);
             AssertBarsAreEqual(expectedFirstBar.Bid, firstBar.Bid);
+            Assert.AreEqual(expectedFirstBar.LastBidSize, firstBar.LastBidSize);
+            Assert.AreEqual(expectedFirstBar.LastAskSize, firstBar.LastAskSize);
+            Assert.AreEqual(expectedFirstBar.Time, firstBar.Time);
+            Assert.AreEqual(expectedFirstBar.EndTime, firstBar.EndTime);
+        }
+
+        [Test]
+        public void AggregateFlushesData()
+        {
+            var symbol = Symbols.AAPL;
+            var period = Resolution.Daily.ToTimeSpan();
+            var initialTicks = new[] { new Tick(_aggregationTime, symbol, string.Empty, string.Empty, 10, 380) };
+
+            var expectedBar = new TradeBar
+            {
+                Open = 380,
+                Close = 380,
+                High = 380,
+                Low = 380,
+                Volume = 10,
+                Time = _aggregationTime.Date,
+                Symbol = Symbols.AAPL,
+                Period = period
+            };
+            var aggregated = LeanData.AggregateTicksToTradeBars(initialTicks, symbol, period).ToList();
+
+            // should aggregate even for a single point
+            Assert.AreEqual(1, aggregated.Count);
+            Assert.True(aggregated.All(i => i.Period == period));
+            Assert.True(aggregated.All(i => i.Symbol == symbol));
+
+            var firstBar = aggregated.Single();
+
+            AssertBarsAreEqual(expectedBar, firstBar);
+            Assert.AreEqual(expectedBar.Volume, firstBar.Volume);
+            Assert.AreEqual(expectedBar.Time, firstBar.Time);
+            Assert.AreEqual(expectedBar.EndTime, firstBar.EndTime);
+        }
+
+        [Test]
+        public void AggregateEmpty()
+        {
+            var aggregated = LeanData.AggregateTicksToTradeBars(new List<Tick>(), Symbols.AAPL, Resolution.Daily.ToTimeSpan()).ToList();
+
+            Assert.AreEqual(0, aggregated.Count);
         }
 
         private static void AssertBarsAreEqual(IBar expected, IBar actual)
@@ -573,18 +756,18 @@ namespace QuantConnect.Tests.Common.Util
                 new LeanDataTestParameters(Symbols.DE10YBEUR, date, Resolution.Daily, TickType.Quote, "de10ybeur.zip", "de10ybeur.csv", "cfd/oanda/daily"),
 
                 // Crypto - trades
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Tick, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_tick_trade.csv", "crypto/gdax/tick/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Second, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_second_trade.csv", "crypto/gdax/second/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Minute, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_minute_trade.csv", "crypto/gdax/minute/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Hour, TickType.Trade, "btcusd_trade.zip", "btcusd.csv", "crypto/gdax/hour"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Daily, TickType.Trade, "btcusd_trade.zip", "btcusd.csv", "crypto/gdax/daily"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Tick, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_tick_trade.csv", "crypto/coinbase/tick/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Second, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_second_trade.csv", "crypto/coinbase/second/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Minute, TickType.Trade, "20160217_trade.zip", "20160217_btcusd_minute_trade.csv", "crypto/coinbase/minute/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Hour, TickType.Trade, "btcusd_trade.zip", "btcusd.csv", "crypto/coinbase/hour"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Daily, TickType.Trade, "btcusd_trade.zip", "btcusd.csv", "crypto/coinbase/daily"),
 
                 // Crypto - quotes
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Tick, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_tick_quote.csv", "crypto/gdax/tick/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Second, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_second_quote.csv", "crypto/gdax/second/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Minute, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_minute_quote.csv", "crypto/gdax/minute/btcusd"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Hour, TickType.Quote, "btcusd_quote.zip", "btcusd.csv", "crypto/gdax/hour"),
-                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Daily, TickType.Quote, "btcusd_quote.zip", "btcusd.csv", "crypto/gdax/daily"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Tick, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_tick_quote.csv", "crypto/coinbase/tick/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Second, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_second_quote.csv", "crypto/coinbase/second/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Minute, TickType.Quote, "20160217_quote.zip", "20160217_btcusd_minute_quote.csv", "crypto/coinbase/minute/btcusd"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Hour, TickType.Quote, "btcusd_quote.zip", "btcusd.csv", "crypto/coinbase/hour"),
+                new LeanDataTestParameters(Symbols.BTCUSD, date, Resolution.Daily, TickType.Quote, "btcusd_quote.zip", "btcusd.csv", "crypto/coinbase/daily"),
 
                 // Futures (expiration month == contract month) - trades
                 new LeanDataTestParameters(Symbols.Future_ESZ18_Dec2018, dateFutures, Resolution.Tick, TickType.Trade, "20181210_trade.zip", "20181210_es_tick_trade_201812_20181221.csv", "future/cme/tick/es"),
@@ -686,23 +869,23 @@ namespace QuantConnect.Tests.Common.Util
                     "34200000,1,2,3,4,5,6,7,8,9,10"),
                 new LeanDataLineTestParameters(new QuoteBar(time.Date, Symbols.BTCUSD, new Bar(1, 2, 3, 4), 5, new Bar(6, 7, 8, 9), 10, TimeSpan.FromDays(1)), SecurityType.Crypto, Resolution.Daily,
                     "20160218 00:00,1,2,3,4,5,6,7,8,9,10"),
-                new LeanDataLineTestParameters(new Tick(time, Symbols.BTCUSD, 0, 1, 3) {Value = 2m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "gdax", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick(time, Symbols.BTCUSD, 0, 1, 3) {Value = 2m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "coinbase", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1,2,3,4,0"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, Value = 1, Quantity = 2,TickType = TickType.Trade, Exchange = "gdax", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, Value = 1, Quantity = 2,TickType = TickType.Trade, Exchange = "coinbase", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1,2,0"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, Value = 1, Quantity = 2,TickType = TickType.Trade, Exchange = "gdax", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, Value = 1, Quantity = 2,TickType = TickType.Trade, Exchange = "coinbase", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1,2,1"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1m, AskPrice = 3m, Value = 2m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "gdax", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1m, AskPrice = 3m, Value = 2m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "coinbase", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1,2,3,4,1"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "gdax", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "coinbase", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1.25,2,1.5,4,1"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "gdax", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "coinbase", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1.25,2,1.5,4,0"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "gdax", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = 1.25m, AskPrice = 1.50m, Value = 1.375m, TickType = TickType.Quote, BidSize = 2, AskSize = 4, Exchange = "coinbase", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,1.25,2,1.5,4,0"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = -1m, AskPrice = -1m, Value = -1m, TickType = TickType.Quote, BidSize = 0, AskSize = 0, Exchange = "gdax", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = -1m, AskPrice = -1m, Value = -1m, TickType = TickType.Quote, BidSize = 0, AskSize = 0, Exchange = "coinbase", Suspicious = false}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,-1,0,-1,0,0"),
-                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = -1m, AskPrice = -1m, Value = -1m, TickType = TickType.Quote, BidSize = 0, AskSize = 0, Exchange = "gdax", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
+                new LeanDataLineTestParameters(new Tick {Time = time, Symbol = Symbols.BTCUSD, BidPrice = -1m, AskPrice = -1m, Value = -1m, TickType = TickType.Quote, BidSize = 0, AskSize = 0, Exchange = "coinbase", Suspicious = true}, SecurityType.Crypto, Resolution.Tick,
                     "34200000,-1,0,-1,0,1"),
                 new LeanDataLineTestParameters(new TradeBar(time, Symbols.BTCUSD, 1, 2, 3, 4, 5, TimeSpan.FromMinutes(1)), SecurityType.Crypto, Resolution.Minute,
                     "34200000,1,2,3,4,5"),
@@ -718,51 +901,56 @@ namespace QuantConnect.Tests.Common.Util
             {
                 return new[]
                 {
-                    new TestCaseData(TimeSpan.FromMinutes(1), new TradeBar {Open = 10, Close = 9, High = 15, Low = 7, Volume = 200, Period = TimeSpan.FromMinutes(1)}),
-                    new TestCaseData(TimeSpan.FromHours(1), new TradeBar {Open = 10, Close = 21, High = 25, Low = 7, Volume = 290, Period = TimeSpan.FromHours(1)}),
-                    new TestCaseData(TimeSpan.FromDays(1), new TradeBar {Open = 10, Close = 11, High = 25, Low = 7, Volume = 310, Period = TimeSpan.FromDays(1)}),
+                    new TestCaseData(TimeSpan.FromMinutes(1), new TradeBar {Open = 10, Close = 9, High = 15, Low = 7, Volume = 200, Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromMinutes(1)}),
+                    new TestCaseData(TimeSpan.FromHours(1), new TradeBar {Open = 10, Close = 21, High = 25, Low = 7, Volume = 290, Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromHours(1)}),
+                    new TestCaseData(TimeSpan.FromDays(1), new TradeBar {Open = 10, Close = 11, High = 25, Low = 7, Volume = 310, Time = _aggregationTime.Date, Symbol = Symbols.AAPL, Period = TimeSpan.FromDays(1)}),
                 };
             }
         }
-        
+
         private static TestCaseData[] AggregateQuoteBarsTestData
         {
             get
             {
                 return new[]
                 {
-                    new TestCaseData(TimeSpan.FromMinutes(1), new QuoteBar {Ask = new Bar {Open = 10, High = 15, Low = 7, Close = 9}, Bid = {Open = 7, High = 14, Low = 4, Close = 5}, Period = TimeSpan.FromMinutes(1)}),
-                    new TestCaseData(TimeSpan.FromHours(1), new QuoteBar {Ask = new Bar {Open = 10, High = 25, Low = 7, Close = 21}, Bid = {Open = 7, High = 22, Low = 4, Close = 20}, Period = TimeSpan.FromMinutes(1)}),
-                    new TestCaseData(TimeSpan.FromDays(1), new QuoteBar {Ask = new Bar {Open = 10, High = 25, Low = 7, Close = 11}, Bid = {Open = 7, High = 22, Low = 4, Close = 10}, Period = TimeSpan.FromMinutes(1)}),
+                    new TestCaseData(TimeSpan.FromMinutes(1), new QuoteBar {Ask = new Bar {Open = 10, High = 15, Low = 7, Close = 9}, Bid = {Open = 7, High = 14, Low = 4, Close = 5},
+                        Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromMinutes(1)}),
+                    new TestCaseData(TimeSpan.FromHours(1), new QuoteBar {Ask = new Bar {Open = 10, High = 25, Low = 7, Close = 21}, Bid = {Open = 7, High = 22, Low = 4, Close = 20},
+                        Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromHours(1)}),
+                    new TestCaseData(TimeSpan.FromDays(1), new QuoteBar {Ask = new Bar {Open = 10, High = 25, Low = 7, Close = 11}, Bid = {Open = 7, High = 22, Low = 4, Close = 10},
+                        Time = _aggregationTime.Date, Symbol = Symbols.AAPL, Period = TimeSpan.FromDays(1)}),
                 };
             }
         }
-        
+
         private static TestCaseData[] AggregateTickTestData
         {
             get
             {
                 return new[]
                 {
-                    new TestCaseData(TimeSpan.FromSeconds(1), new QuoteBar {Ask = new Bar {Open = 13, High = 13, Low = 13, Close = 13}, Bid = {Open = 11, High = 11, Low = 11, Close = 11}, Period = TimeSpan.FromSeconds(1)}),
-                    new TestCaseData(TimeSpan.FromMinutes(1), new QuoteBar {Ask = new Bar {Open = 13, High = 21, Low = 13, Close = 21}, Bid = {Open = 11, High = 19, Low = 11, Close = 19}, Period = TimeSpan.FromMinutes(1)}),
+                    new TestCaseData(TimeSpan.FromSeconds(1), new QuoteBar {Ask = new Bar {Open = 13, High = 13, Low = 13, Close = 13}, Bid = {Open = 11, High = 11, Low = 11, Close = 11},
+                        LastBidSize = 10, LastAskSize = 12, Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromSeconds(1)}),
+                    new TestCaseData(TimeSpan.FromMinutes(1), new QuoteBar {Ask = new Bar {Open = 13, High = 21, Low = 13, Close = 21}, Bid = {Open = 11, High = 19, Low = 11, Close = 19},
+                        LastBidSize = 18, LastAskSize = 20, Time = _aggregationTime, Symbol = Symbols.AAPL, Period = TimeSpan.FromMinutes(1)}),
                 };
             }
         }
 
         public class LeanDataTestParameters
         {
-            public readonly string Name;
-            public readonly Symbol Symbol;
-            public readonly DateTime Date;
-            public readonly Resolution Resolution;
-            public readonly TickType TickType;
-            public readonly Type BaseDataType;
-            public readonly SubscriptionDataConfig Config;
-            public readonly string ExpectedZipFileName;
-            public readonly string ExpectedZipEntryName;
-            public readonly string ExpectedRelativeZipFilePath;
-            public readonly string ExpectedZipFilePath;
+            public string Name { get; init; }
+            public Symbol Symbol { get; init; }
+            public DateTime Date { get; init; }
+            public Resolution Resolution { get; init; }
+            public TickType TickType { get; init; }
+            public Type BaseDataType { get; init; }
+            public SubscriptionDataConfig Config { get; init; }
+            public string ExpectedZipFileName { get; init; }
+            public string ExpectedZipEntryName { get; init; }
+            public string ExpectedRelativeZipFilePath { get; init; }
+            public string ExpectedZipFilePath { get; init; }
             public SecurityType SecurityType { get { return Symbol.ID.SecurityType; } }
 
             public LeanDataTestParameters(Symbol symbol, DateTime date, Resolution resolution, TickType tickType, string expectedZipFileName, string expectedZipEntryName, string expectedRelativeZipFileDirectory = "")
@@ -789,13 +977,13 @@ namespace QuantConnect.Tests.Common.Util
 
         public class LeanDataLineTestParameters
         {
-            public readonly string Name;
-            public readonly BaseData Data;
-            public readonly SecurityType SecurityType;
-            public readonly Resolution Resolution;
-            public readonly string ExpectedLine;
-            public readonly SubscriptionDataConfig Config;
-            public readonly TickType TickType;
+            public string Name { get; init; }
+            public BaseData Data { get; init; }
+            public SecurityType SecurityType { get; init; }
+            public Resolution Resolution { get; init; }
+            public string ExpectedLine { get; init; }
+            public SubscriptionDataConfig Config { get; init; }
+            public TickType TickType { get; init; }
 
             public LeanDataLineTestParameters(BaseData data, SecurityType securityType, Resolution resolution, string expectedLine)
             {

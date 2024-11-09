@@ -31,8 +31,8 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="indexes" />
     public class BasicTemplateIndiaIndexAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        protected Symbol Nifty;
-        protected Symbol NiftyETF;
+        protected Symbol Nifty { get; set; }
+        protected Symbol NiftyETF { get; set; }
         private ExponentialMovingAverage _emaSlow;
         private ExponentialMovingAverage _emaFast;
 
@@ -92,7 +92,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (Portfolio[Nifty].TotalSaleVolume > 0)
             {
-                throw new Exception("Index is not tradable.");
+                throw new RegressionTestException("Index is not tradable.");
             }
         }
 
@@ -104,7 +104,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -117,18 +117,26 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "6"},
+            {"Total Orders", "6"},
             {"Average Win", "0%"},
             {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "-0.395%"},
+            {"Compounding Annual Return", "-0.386%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999961.17"},
             {"Net Profit", "-0.004%"},
-            {"Sharpe Ratio", "-23.595"},
+            {"Sharpe Ratio", "-328.371"},
+            {"Sortino Ratio", "-328.371"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -141,28 +149,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "₹36.00"},
-            {"Estimated Strategy Capacity", "₹74000.00"},
+            {"Estimated Strategy Capacity", "₹84000.00"},
             {"Lowest Capacity Asset", "JUNIORBEES UL"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-29.6"},
-            {"Return Over Maximum Drawdown", "-123.624"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "₹0"},
-            {"Total Accumulated Estimated Alpha Value", "₹0"},
-            {"Mean Population Estimated Insight Value", "₹0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "4637f26543287548b28a3c296db055d3"}
+            {"Portfolio Turnover", "0.04%"},
+            {"OrderListHash", "79ab9ec506959c562be8b3cdbb174c39"}
         };
     }
 }

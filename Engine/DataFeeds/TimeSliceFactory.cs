@@ -15,13 +15,14 @@
 */
 
 using System;
-using System.Collections.Generic;
 using NodaTime;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
-using QuantConnect.Data.UniverseSelection;
-using QuantConnect.Interfaces;
 using QuantConnect.Logging;
+using QuantConnect.Interfaces;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
+using QuantConnect.Data.UniverseSelection;
+using System.Linq;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -44,6 +45,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private readonly OptionChains _emptyOptionChains = new OptionChains();
         private readonly FuturesChains _emptyFuturesChains = new FuturesChains();
         private readonly SymbolChangedEvents _emptySymbolChangedEvents = new SymbolChangedEvents();
+        private readonly MarginInterestRates _emptyMarginInterestRates = new MarginInterestRates();
 
         /// <summary>
         /// Creates a new instance
@@ -100,6 +102,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             Dividend dividend;
             Delisting delisting;
             SymbolChangedEvent symbolChange;
+            MarginInterestRate marginInterestRate;
 
             // we need to be able to reference the slice being created in order to define the
             // evaluation of option price models, so we define a 'future' that can be referenced
@@ -117,6 +120,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             OptionChains optionChains = null;
             FuturesChains futuresChains = null;
             SymbolChangedEvents symbolChanges = null;
+            MarginInterestRates marginInterestRates = null;
 
             UpdateEmptyCollections(algorithmTime);
 
@@ -283,12 +287,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         }
 
                         // special handling of futures data to build the futures chain. Don't push canonical continuous contract
-                        if (symbol.SecurityType == SecurityType.Future && !symbol.IsCanonical())
+                        // We don't push internal feeds because it could be a continuous mapping future not part of the requested chain
+                        if (symbol.SecurityType == SecurityType.Future && !symbol.IsCanonical() && !packet.Configuration.IsInternalFeed)
                         {
-                            // internal feeds, like open interest, will not create the chain but will update it if it exists
-                            // this is because the open interest could arrive at some closed market hours in which there is no other data and we don't
-                            // want to generate a chain object in this case
-                            if (futuresChains == null && !packet.Configuration.IsInternalFeed)
+                            if (futuresChains == null)
                             {
                                 futuresChains = new FuturesChains(algorithmTime);
                             }
@@ -350,6 +352,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             // symbol changes is keyed by the requested symbol
                             symbolChanges[packet.Configuration.Symbol] = symbolChange;
                         }
+                        else if ((marginInterestRate = baseData as MarginInterestRate) != null)
+                        {
+                            if (marginInterestRates == null)
+                            {
+                                marginInterestRates = new MarginInterestRates(algorithmTime);
+                            }
+                            marginInterestRates[packet.Configuration.Symbol] = marginInterestRate;
+                        }
+
+                        // let's make it available to the user through the cache
+                        security.Add(new UpdateData<ISecurityPrice>(packet.Security, baseData.GetType(), new List<BaseData> { baseData }, packet.Configuration.IsInternalFeed, baseData.IsFillForward));
                     }
                 }
 
@@ -363,7 +376,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 }
             }
 
-            slice = new Slice(algorithmTime, allDataForAlgorithm, tradeBars ?? _emptyTradeBars, quoteBars ?? _emptyQuoteBars, ticks ?? _emptyTicks, optionChains ?? _emptyOptionChains, futuresChains ?? _emptyFuturesChains, splits ?? _emptySplits, dividends ?? _emptyDividends, delistings ?? _emptyDelistings, symbolChanges ?? _emptySymbolChangedEvents, utcDateTime, allDataForAlgorithm.Count > 0);
+            slice = new Slice(algorithmTime, allDataForAlgorithm, tradeBars ?? _emptyTradeBars, quoteBars ?? _emptyQuoteBars, ticks ?? _emptyTicks, optionChains ?? _emptyOptionChains, futuresChains ?? _emptyFuturesChains, splits ?? _emptySplits, dividends ?? _emptyDividends, delistings ?? _emptyDelistings, symbolChanges ?? _emptySymbolChangedEvents, marginInterestRates ?? _emptyMarginInterestRates, utcDateTime, allDataForAlgorithm.Count > 0);
 
             return new TimeSlice(utcDateTime, count, slice, data, security, consolidator, custom ?? _emptyCustom, changes, universeData);
         }
@@ -380,6 +393,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _emptyOptionChains.Clear();
             _emptyFuturesChains.Clear();
             _emptySymbolChangedEvents.Clear();
+            _emptyMarginInterestRates.Clear();
 
 #pragma warning disable 0618 // DataDictionary.Time is deprecated, ignore until removed entirely
             _emptyTradeBars.Time
@@ -390,7 +404,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 = _emptyDelistings.Time
                 = _emptyOptionChains.Time
                 = _emptyFuturesChains.Time
-                = _emptySymbolChangedEvents.Time = algorithmTime;
+                = _emptySymbolChangedEvents.Time
+                = _emptyMarginInterestRates.Time = algorithmTime;
 #pragma warning restore 0618
         }
 
@@ -437,10 +452,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 {
                     foreach (var addedContract in chain.Contracts)
                     {
-                        addedContract.Value.UnderlyingLastPrice = chain.Underlying.Price;
+                        addedContract.Value.Update(chain.Underlying);
                     }
                 }
-                foreach (var contractSymbol in universeData.FilteredContracts)
+                foreach (var contractSymbol in universeData.FilteredContracts ?? Enumerable.Empty<Symbol>())
                 {
                     chain.FilteredContracts.Add(contractSymbol);
                 }
@@ -450,7 +465,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             OptionContract contract;
             if (!chain.Contracts.TryGetValue(baseData.Symbol, out contract))
             {
-                contract = OptionContract.Create(baseData, security, chain.Underlying.Price);
+                contract = OptionContract.Create(baseData, security, chain.Underlying);
 
                 chain.Contracts[baseData.Symbol] = contract;
 
@@ -466,19 +481,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 case MarketDataType.Tick:
                     var tick = (Tick)baseData;
                     chain.Ticks.Add(tick.Symbol, tick);
-                    UpdateContract(contract, tick);
+                    contract.Update(tick);
                     break;
 
                 case MarketDataType.TradeBar:
                     var tradeBar = (TradeBar)baseData;
                     chain.TradeBars[symbol] = tradeBar;
-                    UpdateContract(contract, tradeBar);
+                    contract.Update(tradeBar);
                     break;
 
                 case MarketDataType.QuoteBar:
                     var quote = (QuoteBar)baseData;
                     chain.QuoteBars[symbol] = quote;
-                    UpdateContract(contract, quote);
+                    contract.Update(quote);
                     break;
 
                 case MarketDataType.Base:
@@ -504,7 +519,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             var universeData = baseData as BaseDataCollection;
             if (universeData != null)
             {
-                foreach (var contractSymbol in universeData.FilteredContracts)
+                foreach (var contractSymbol in universeData.FilteredContracts ?? Enumerable.Empty<Symbol>())
                 {
                     chain.FilteredContracts.Add(contractSymbol);
                 }
@@ -555,55 +570,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     break;
             }
             return true;
-        }
-
-        private static void UpdateContract(OptionContract contract, QuoteBar quote)
-        {
-            if (quote.Ask != null && quote.Ask.Close != 0m)
-            {
-                contract.AskPrice = quote.Ask.Close;
-                contract.AskSize = (long)quote.LastAskSize;
-            }
-            if (quote.Bid != null && quote.Bid.Close != 0m)
-            {
-                contract.BidPrice = quote.Bid.Close;
-                contract.BidSize = (long)quote.LastBidSize;
-            }
-        }
-
-        private static void UpdateContract(OptionContract contract, Tick tick)
-        {
-            if (tick.TickType == TickType.Trade)
-            {
-                contract.LastPrice = tick.Price;
-            }
-            else if (tick.TickType == TickType.Quote)
-            {
-                if (tick.AskPrice != 0m)
-                {
-                    contract.AskPrice = tick.AskPrice;
-                    contract.AskSize = (long)tick.AskSize;
-                }
-                if (tick.BidPrice != 0m)
-                {
-                    contract.BidPrice = tick.BidPrice;
-                    contract.BidSize = (long)tick.BidSize;
-                }
-            }
-            else if (tick.TickType == TickType.OpenInterest)
-            {
-                if (tick.Value != 0m)
-                {
-                    contract.OpenInterest = tick.Value;
-                }
-            }
-        }
-
-        private static void UpdateContract(OptionContract contract, TradeBar tradeBar)
-        {
-            if (tradeBar.Close == 0m) return;
-            contract.LastPrice = tradeBar.Close;
-            contract.Volume = (long)tradeBar.Volume;
         }
 
         private static void UpdateContract(FuturesContract contract, QuoteBar quote)

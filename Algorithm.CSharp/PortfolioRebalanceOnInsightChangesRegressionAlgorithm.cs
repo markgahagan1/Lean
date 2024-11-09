@@ -67,7 +67,7 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     if (UtcTime - lastOrderFilled < TimeSpan.FromDays(30))
                     {
-                        throw new Exception($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
+                        throw new RegressionTestException($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
                     }
                 }
                 _lastOrderFilled[orderEvent.Symbol] = UtcTime;
@@ -84,12 +84,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 6075;
+        public long DataPoints => 6072;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -97,52 +97,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "91"},
-            {"Average Win", "0.14%"},
-            {"Average Loss", "-0.04%"},
-            {"Compounding Annual Return", "9.810%"},
+            {"Total Orders", "80"},
+            {"Average Win", "0.16%"},
+            {"Average Loss", "-0.08%"},
+            {"Compounding Annual Return", "10.558%"},
             {"Drawdown", "18.100%"},
-            {"Expectancy", "2.562"},
-            {"Net Profit", "20.583%"},
-            {"Sharpe Ratio", "0.547"},
-            {"Probabilistic Sharpe Ratio", "21.107%"},
-            {"Loss Rate", "21%"},
-            {"Win Rate", "79%"},
-            {"Profit-Loss Ratio", "3.48"},
-            {"Alpha", "0.024"},
-            {"Beta", "1.033"},
-            {"Annual Standard Deviation", "0.142"},
+            {"Expectancy", "1.741"},
+            {"Start Equity", "100000"},
+            {"End Equity", "122219.42"},
+            {"Net Profit", "22.219%"},
+            {"Sharpe Ratio", "0.521"},
+            {"Sortino Ratio", "0.615"},
+            {"Probabilistic Sharpe Ratio", "22.822%"},
+            {"Loss Rate", "12%"},
+            {"Win Rate", "88%"},
+            {"Profit-Loss Ratio", "2.11"},
+            {"Alpha", "0.029"},
+            {"Beta", "1.029"},
+            {"Annual Standard Deviation", "0.141"},
             {"Annual Variance", "0.02"},
-            {"Information Ratio", "0.362"},
+            {"Information Ratio", "0.432"},
             {"Tracking Error", "0.071"},
-            {"Treynor Ratio", "0.075"},
-            {"Total Fees", "$95.57"},
-            {"Estimated Strategy Capacity", "$82000000.00"},
+            {"Treynor Ratio", "0.072"},
+            {"Total Fees", "$84.60"},
+            {"Estimated Strategy Capacity", "$100000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.001"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "0.815"},
-            {"Return Over Maximum Drawdown", "0.541"},
-            {"Portfolio Turnover", "0.002"},
-            {"Total Insights Generated", "2028"},
-            {"Total Insights Closed", "2024"},
-            {"Total Insights Analysis Completed", "2024"},
-            {"Long Insight Count", "2028"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "6d2a084c752e24c6d46866dba64f8d88"}
+            {"Portfolio Turnover", "0.23%"},
+            {"OrderListHash", "c55abc0a7257979180968944cf9b73d5"}
         };
     }
 }

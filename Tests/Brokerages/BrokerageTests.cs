@@ -20,8 +20,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using QuantConnect.Brokerages;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
@@ -38,6 +38,8 @@ namespace QuantConnect.Tests.Brokerages
         private IBrokerage _brokerage;
         private OrderProvider _orderProvider;
         private SecurityProvider _securityProvider;
+
+        protected ManualResetEvent OrderFillEvent { get; } = new ManualResetEvent(false);
 
         #region Test initialization and cleanup
 
@@ -82,6 +84,8 @@ namespace QuantConnect.Tests.Brokerages
                 {
                     DisposeBrokerage(_brokerage);
                 }
+
+                OrderFillEvent.Reset();
             }
         }
 
@@ -126,63 +130,44 @@ namespace QuantConnect.Tests.Brokerages
             {
                 // these securities don't need to be real, just used for the ISecurityProvider impl, required
                 // by brokerages to track holdings
-                SecurityProvider[accountHolding.Symbol] = CreateSecurity(accountHolding.Symbol);
-                SecurityProvider[accountHolding.Symbol].Holdings.SetHoldings(accountHolding.AveragePrice, accountHolding.Quantity);
+                var security = SecurityProvider.GetSecurity(accountHolding.Symbol);
+                security.Holdings.SetHoldings(accountHolding.AveragePrice, accountHolding.Quantity);
             }
-            brokerage.OrderStatusChanged += (sender, args) =>
-            {
-                Log.Trace("");
-                Log.Trace("ORDER STATUS CHANGED: " + args);
-                Log.Trace("");
+            brokerage.OrdersStatusChanged += HandleFillEvents;
 
-                // we need to keep this maintained properly
-                if (args.Status == OrderStatus.Filled || args.Status == OrderStatus.PartiallyFilled)
-                {
-                    Log.Trace("FILL EVENT: " + args.FillQuantity + " units of " + args.Symbol.ToString());
-
-                    Security security;
-                    if (_securityProvider.TryGetValue(args.Symbol, out security))
-                    {
-                        var holding = _securityProvider[args.Symbol].Holdings;
-                        holding.SetHoldings(args.FillPrice, holding.Quantity + args.FillQuantity);
-                    }
-                    else
-                    {
-                        _securityProvider[args.Symbol] = CreateSecurity(args.Symbol);
-                        _securityProvider[args.Symbol].Holdings.SetHoldings(args.FillPrice, args.FillQuantity);
-                    }
-
-                    Log.Trace("--HOLDINGS: " + _securityProvider[args.Symbol]);
-
-                    // update order mapping
-                    var order = _orderProvider.GetOrderById(args.OrderId);
-                    order.Status = args.Status;
-                }
-            };
             return brokerage;
         }
 
-        public static Security CreateSecurity(Symbol symbol)
+        private void HandleFillEvents(object sender, List<OrderEvent> ordeEvents)
         {
-            return new Security(
-                SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                new SubscriptionDataConfig(
-                    typeof(TradeBar),
-                    symbol,
-                    Resolution.Minute,
-                    TimeZones.NewYork,
-                    TimeZones.NewYork,
-                    false,
-                    false,
-                    false
-                ),
-                new Cash(Currencies.USD, 0, 1m),
-                SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance,
-                RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCache()
-            );
+            Log.Trace("");
+            Log.Trace($"ORDER STATUS CHANGED: {string.Join(",", ordeEvents.Select(x => x.ToString()))}");
+            Log.Trace("");
+
+            var orderEvent = ordeEvents[0];
+
+            // we need to keep this maintained properly
+            if (orderEvent.Status == OrderStatus.Filled || orderEvent.Status == OrderStatus.PartiallyFilled)
+            {
+                Log.Trace("FILL EVENT: " + orderEvent.FillQuantity + " units of " + orderEvent.Symbol.ToString());
+
+                if (orderEvent.Status == OrderStatus.Filled)
+                {
+                    OrderFillEvent.Set();
+                }
+
+                var holding = SecurityProvider.GetSecurity(orderEvent.Symbol).Holdings;
+                holding.SetHoldings(orderEvent.FillPrice, holding.Quantity + orderEvent.FillQuantity);
+
+                Log.Trace("--HOLDINGS: " + _securityProvider[orderEvent.Symbol].Holdings);
+
+                // update order mapping
+                var order = _orderProvider.GetOrderById(orderEvent.OrderId);
+                order.Status = orderEvent.Status;
+            }
         }
+
+        protected virtual BrokerageName BrokerageName { get; set; } = BrokerageName.Default;
 
         public OrderProvider OrderProvider
         {
@@ -191,7 +176,7 @@ namespace QuantConnect.Tests.Brokerages
 
         public SecurityProvider SecurityProvider
         {
-            get { return _securityProvider ?? (_securityProvider = new SecurityProvider()); }
+            get { return _securityProvider ?? (_securityProvider = new SecurityProvider(new(), BrokerageName, OrderProvider)); }
         }
 
         /// <summary>
@@ -206,6 +191,7 @@ namespace QuantConnect.Tests.Brokerages
         /// <param name="brokerage">The brokerage instance to be disposed of</param>
         protected virtual void DisposeBrokerage(IBrokerage brokerage)
         {
+            brokerage.OrdersStatusChanged -= HandleFillEvents;
             brokerage.Disconnect();
             brokerage.DisposeSafely();
         }
@@ -226,7 +212,6 @@ namespace QuantConnect.Tests.Brokerages
                 if (holding.Quantity == 0) continue;
                 Log.Trace("Liquidating: " + holding);
                 var order = new MarketOrder(holding.Symbol, -holding.Quantity, DateTime.UtcNow);
-                _orderProvider.Add(order);
                 PlaceOrderWaitForStatus(order, OrderStatus.Filled);
             }
         }
@@ -297,15 +282,16 @@ namespace QuantConnect.Tests.Brokerages
 
             var order = PlaceOrderWaitForStatus(parameters.CreateLongOrder(GetDefaultQuantity()), parameters.ExpectedStatus);
 
-            var canceledOrderStatusEvent = new ManualResetEvent(false);
-            EventHandler<OrderEvent> orderStatusCallback = (sender, fill) =>
+            using var canceledOrderStatusEvent = new ManualResetEvent(false);
+            EventHandler<List<OrderEvent>> orderStatusCallback = (sender, fills) =>
             {
-                if (fill.Status == OrderStatus.Canceled)
+                order.Status = fills.First().Status;
+                if (fills[0].Status == OrderStatus.Canceled)
                 {
                     canceledOrderStatusEvent.Set();
                 }
             };
-            Brokerage.OrderStatusChanged += orderStatusCallback;
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
             var cancelResult = false;
             try
             {
@@ -343,7 +329,7 @@ namespace QuantConnect.Tests.Brokerages
             // We do NOT expect the OrderStatus.Canceled event
             Assert.IsFalse(canceledOrderStatusEvent.WaitOne(new TimeSpan(0, 0, 10)));
 
-            Brokerage.OrderStatusChanged -= orderStatusCallback;
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
         }
 
         public virtual void LongFromZero(OrderTestParameters parameters)
@@ -456,15 +442,16 @@ namespace QuantConnect.Tests.Brokerages
         [Test, Explicit("This test requires reading the output and selection of a low volume security for the Brokerage")]
         public void PartialFills()
         {
-            var manualResetEvent = new ManualResetEvent(false);
+            using var manualResetEvent = new ManualResetEvent(false);
 
             var qty = 1000000m;
             var remaining = qty;
             var sync = new object();
-            Brokerage.OrderStatusChanged += (sender, orderEvent) =>
+            Brokerage.OrdersStatusChanged += (sender, orderEvents) =>
             {
                 lock (sync)
                 {
+                    var orderEvent = orderEvents[0];
                     remaining -= orderEvent.FillQuantity;
                     Log.Trace("Remaining: " + remaining + " FillQuantity: " + orderEvent.FillQuantity);
                     if (orderEvent.Status == OrderStatus.Filled)
@@ -502,30 +489,30 @@ namespace QuantConnect.Tests.Brokerages
                 return;
             }
 
-            var filledResetEvent = new ManualResetEvent(false);
-            EventHandler<OrderEvent> brokerageOnOrderStatusChanged = (sender, args) =>
+            EventHandler<List<OrderEvent>> brokerageOnOrdersStatusChanged = (sender, args) =>
             {
-                order.Status = args.Status;
-                if (args.Status == OrderStatus.Filled)
-                {
-                    filledResetEvent.Set();
-                }
-                if (args.Status == OrderStatus.Canceled || args.Status == OrderStatus.Invalid)
+                var orderEvent = args[0];
+                order.Status = orderEvent.Status;
+                if (orderEvent.Status == OrderStatus.Canceled || orderEvent.Status == OrderStatus.Invalid)
                 {
                     Log.Trace("ModifyOrderUntilFilled(): " + order);
-                    Assert.Fail("Unexpected order status: " + args.Status);
+                    Assert.Fail("Unexpected order status: " + orderEvent.Status);
                 }
             };
+            EventHandler<BrokerageOrderIdChangedEvent> brokerageOrderIdChanged = (sender, args) => {
+                order.BrokerId = args.BrokerId;
+            };
 
-            Brokerage.OrderStatusChanged += brokerageOnOrderStatusChanged;
+            Brokerage.OrderIdChanged += brokerageOrderIdChanged;
+            Brokerage.OrdersStatusChanged += brokerageOnOrdersStatusChanged;
 
             Log.Trace("");
             Log.Trace("MODIFY UNTIL FILLED: " + order);
             Log.Trace("");
             var stopwatch = Stopwatch.StartNew();
-            while (!filledResetEvent.WaitOne(3000) && stopwatch.Elapsed.TotalSeconds < secondsTimeout)
+            while (order.Status != OrderStatus.Filled && !OrderFillEvent.WaitOne(3000) && stopwatch.Elapsed.TotalSeconds < secondsTimeout)
             {
-                filledResetEvent.Reset();
+                OrderFillEvent.Reset();
                 if (order.Status == OrderStatus.PartiallyFilled) continue;
 
                 var marketPrice = GetAskPrice(order.Symbol);
@@ -538,7 +525,7 @@ namespace QuantConnect.Tests.Brokerages
                     {
                         break;
                     }
-                        
+
                     Log.Trace("BrokerageTests.ModifyOrderUntilFilled(): " + order);
                     if (!Brokerage.UpdateOrder(order))
                     {
@@ -550,11 +537,12 @@ namespace QuantConnect.Tests.Brokerages
                 }
             }
 
-            Brokerage.OrderStatusChanged -= brokerageOnOrderStatusChanged;
+            Brokerage.OrderIdChanged -= brokerageOrderIdChanged;
+            Brokerage.OrdersStatusChanged -= brokerageOnOrdersStatusChanged;
         }
 
         /// <summary>
-        /// Places the specified order with the brokerage and wait until we get the <paramref name="expectedStatus"/> back via an OrderStatusChanged event.
+        /// Places the specified order with the brokerage and wait until we get the <paramref name="expectedStatus"/> back via an OrdersStatusChanged event.
         /// This function handles adding the order to the <see cref="IOrderProvider"/> instance as well as incrementing the order ID.
         /// </summary>
         /// <param name="order">The order to be submitted</param>
@@ -565,29 +553,36 @@ namespace QuantConnect.Tests.Brokerages
         protected Order PlaceOrderWaitForStatus(Order order, OrderStatus expectedStatus = OrderStatus.Filled,
                                                 double secondsTimeout = 30.0, bool allowFailedSubmission = false)
         {
-            var requiredStatusEvent = new ManualResetEvent(false);
-            var desiredStatusEvent = new ManualResetEvent(false);
-            EventHandler<OrderEvent> brokerageOnOrderStatusChanged = (sender, args) =>
+            using var requiredStatusEvent = new ManualResetEvent(false);
+            using var desiredStatusEvent = new ManualResetEvent(false);
+            EventHandler<List<OrderEvent>> brokerageOnOrdersStatusChanged = (sender, args) =>
             {
+                var orderEvent = args[0];
                 // no matter what, every order should fire at least one of these
-                if (args.Status == OrderStatus.Submitted || args.Status == OrderStatus.Invalid)
+                if (orderEvent.Status == OrderStatus.Submitted || orderEvent.Status == OrderStatus.Invalid)
                 {
                     Log.Trace("");
-                    Log.Trace("SUBMITTED: " + args);
+                    Log.Trace("SUBMITTED: " + orderEvent);
                     Log.Trace("");
                     requiredStatusEvent.Set();
                 }
                 // make sure we fire the status we're expecting
-                if (args.Status == expectedStatus)
+                if (orderEvent.Status == expectedStatus)
                 {
                     Log.Trace("");
-                    Log.Trace("EXPECTED: " + args);
+                    Log.Trace("EXPECTED: " + orderEvent);
                     Log.Trace("");
                     desiredStatusEvent.Set();
                 }
             };
+            EventHandler<BrokerageOrderIdChangedEvent> brokerageOrderIdChanged = (sender, args) => {
+                order.BrokerId = args.BrokerId;
+            };
 
-            Brokerage.OrderStatusChanged += brokerageOnOrderStatusChanged;
+            Brokerage.OrderIdChanged += brokerageOrderIdChanged;
+            Brokerage.OrdersStatusChanged += brokerageOnOrdersStatusChanged;
+
+            OrderFillEvent.Reset();
 
             OrderProvider.Add(order);
             if (!Brokerage.PlaceOrder(order) && !allowFailedSubmission)
@@ -609,12 +604,13 @@ namespace QuantConnect.Tests.Brokerages
                 requiredStatusEvent.WaitOne((int)(1000 * secondsTimeout));
             }
 
-            Brokerage.OrderStatusChanged -= brokerageOnOrderStatusChanged;
+            Brokerage.OrderIdChanged -= brokerageOrderIdChanged;
+            Brokerage.OrdersStatusChanged -= brokerageOnOrdersStatusChanged;
 
             return order;
         }
 
-        protected SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
+        protected static SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
         {
             return new SubscriptionDataConfig(
                 typeof(T),
@@ -627,7 +623,7 @@ namespace QuantConnect.Tests.Brokerages
                 false);
         }
 
-        protected void ProcessFeed(IEnumerator<BaseData> enumerator, CancellationTokenSource cancellationToken, Action<BaseData> callback = null)
+        protected static void ProcessFeed(IEnumerator<BaseData> enumerator, CancellationTokenSource cancellationToken, Action<BaseData> callback = null)
         {
             Task.Factory.StartNew(() =>
             {

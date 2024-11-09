@@ -44,13 +44,8 @@ namespace QuantConnect.Tests.Common.Brokerages
         [TestCase(0.000009, false)]
         public void CanSubmitMarketOrder_OrderSizeIsLargeEnough(decimal orderQuantity, bool isValidOrderQuantity)
         {
-            var order = new Mock<MarketOrder>
-            {
-                Object =
-                {
-                    Quantity = orderQuantity
-                }
-            };
+            var order = new Mock<MarketOrder>();
+            order.Setup(mock => mock.Quantity).Returns(orderQuantity);
 
             _security.Cache.AddData(new Tick
             {
@@ -65,45 +60,48 @@ namespace QuantConnect.Tests.Common.Brokerages
 
             Assert.AreEqual(isValidOrderQuantity, BinanceBrokerageModel.CanSubmitOrder(_security, order.Object, out var message));
             Assert.AreEqual(isValidOrderQuantity, message == null);
+            if (!isValidOrderQuantity)
+            {
+                var price = order.Object.Direction == OrderDirection.Buy ? _security.AskPrice : _security.BidPrice;
+                Assert.AreEqual(Messages.DefaultBrokerageModel.InvalidOrderSize(_security, order.Object.Quantity, price), message.Message);
+            }
         }
 
         [TestCase(0.002, 5500, true)]
         [TestCase(0.003, 4500, true)]
-        [TestCase(0.002, 4500, false)]
+        [TestCase(0.0002, 4500, false)]
         public void CanSubmitLimitOrder_OrderSizeIsLargeEnough(decimal orderQuantity, decimal limitPrice, bool isValidOrderQuantity)
         {
-            var order = new Mock<LimitOrder>
-            {
-                Object =
-                {
-                    Quantity = orderQuantity,
-                    LimitPrice = limitPrice
-                }
-            };
+            var order = new Mock<LimitOrder>();
+            order.Setup(mock => mock.Quantity).Returns(orderQuantity);
+            order.Object.LimitPrice = limitPrice;
 
             Assert.AreEqual(isValidOrderQuantity, BinanceBrokerageModel.CanSubmitOrder(_security, order.Object, out var message));
             Assert.AreEqual(isValidOrderQuantity, message == null);
+            if (!isValidOrderQuantity)
+            {
+                Assert.AreEqual(Messages.DefaultBrokerageModel.InvalidOrderSize(_security, order.Object.Quantity, order.Object.LimitPrice), message.Message);
+            }
         }
 
         [TestCase(0.002, 5500, 5500, true)]
-        [TestCase(0.002, 4500, 5500, false)]
-        [TestCase(0.002, 5500, 4500, false)]
+        [TestCase(0.001, 4500, 5500, false)]
+        [TestCase(0.001, 5500, 4500, false)]
         [TestCase(0.003, 4500, 5500, true)]
         [TestCase(0.003, 5500, 4500, true)]
         public void CanSubmitStopLimitOrder_OrderSizeIsLargeEnough(decimal orderQuantity, decimal stopPrice, decimal limitPrice, bool isValidOrderQuantity)
         {
-            var order = new Mock<StopLimitOrder>
-            {
-                Object =
-                {
-                    Quantity = orderQuantity,
-                    StopPrice = stopPrice,
-                    LimitPrice = limitPrice
-                }
-            };
+            var order = new Mock<StopLimitOrder>();
+            order.Setup(mock => mock.Quantity).Returns(orderQuantity);
+            order.Object.StopPrice = stopPrice;
+            order.Object.LimitPrice = limitPrice;
 
             Assert.AreEqual(isValidOrderQuantity, BinanceBrokerageModel.CanSubmitOrder(_security, order.Object, out var message));
             Assert.AreEqual(isValidOrderQuantity, message == null);
+            if (!isValidOrderQuantity)
+            {
+                Assert.AreEqual(Messages.DefaultBrokerageModel.InvalidOrderSize(_security, order.Object.Quantity, Math.Min(order.Object.LimitPrice, order.Object.StopPrice)), message.Message);
+            }
         }
 
         [Test]

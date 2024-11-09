@@ -27,13 +27,11 @@ namespace QuantConnect.Packets
         /// <summary>
         /// Packet type defined by a string enum
         /// </summary>
-        [JsonProperty(PropertyName = "eType")]
         public PacketType Type { get; set; } = PacketType.None;
 
         /// <summary>
         /// User unique specific channel endpoint to send the packets
         /// </summary>
-        [JsonProperty(PropertyName = "sChannel")]
         public virtual string Channel { get; set; } = "";
 
         /// <summary>
@@ -168,6 +166,33 @@ namespace QuantConnect.Packets
         OptimizationResult,
 
         /// Aggregated packets
-        Aggregated
+        Aggregated,
+
+        /// Query the language model
+        LanguageModelQuery,
+
+        /// Send feedback to a language model response
+        LanguageModelFeedback,
+
+        /// The language models response
+        LanguageModelResponse,
+
+        /// Language model code analysis
+        LanguageModelCodeAnalysis,
+
+        /// Language model chat work
+        LanguageModelChatWork,
+
+        /// Language model chat response
+        LanguageModelChatResponse,
+
+        /// Algorithm name update
+        AlgorithmNameUpdate,
+
+        /// Algorithm tags update
+        AlgorithmTagsUpdate,
+
+        /// Research job packet
+        ResearchNode,
     }
 }

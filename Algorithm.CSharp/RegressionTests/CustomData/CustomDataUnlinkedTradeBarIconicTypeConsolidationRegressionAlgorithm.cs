@@ -49,11 +49,11 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (_bb.Current.Value == 0)
             {
-                throw new Exception("Bollinger Band value is zero when we expect non-zero value.");
+                throw new RegressionTestException("Bollinger Band value is zero when we expect non-zero value.");
             }
 
             if (!_invested && _bb.Current.Value > 0.05m)
@@ -128,7 +128,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <remarks>
         /// Unable to be tested in Python, due to pythonnet not supporting overriding of methods from Python
         /// </remarks>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -141,52 +141,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "28.248%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100330"},
             {"Net Profit", "0.330%"},
-            {"Sharpe Ratio", "326.006"},
+            {"Sharpe Ratio", "315.406"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.228"},
+            {"Alpha", "0.22"},
             {"Beta", "0.002"},
             {"Annual Standard Deviation", "0.001"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-7.886"},
             {"Tracking Error", "0.222"},
-            {"Treynor Ratio", "149.368"},
+            {"Treynor Ratio", "144.512"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "VIX.IncrementallyGeneratedCustomData 2S"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79228162514264337593543950335"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "27b250ae26a92f52d39302b8c299726e"}
+            {"Portfolio Turnover", "0.02%"},
+            {"OrderListHash", "a3abee8c47244710f63c596af48a7951"}
         };
     }
 }

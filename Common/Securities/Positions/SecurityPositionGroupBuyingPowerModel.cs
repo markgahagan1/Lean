@@ -140,7 +140,7 @@ namespace QuantConnect.Securities.Positions
                 )
             );
 
-            var quantity = result.Quantity * security.SymbolProperties.LotSize;
+            var quantity = result.Quantity / security.SymbolProperties.LotSize;
             return new GetMaximumLotsResult(quantity, result.Reason, result.IsError);
         }
 
@@ -163,7 +163,7 @@ namespace QuantConnect.Securities.Positions
             var position = parameters.PositionGroup.Single();
             var security = parameters.Portfolio.Securities[position.Symbol];
             return security.BuyingPowerModel.HasSufficientBuyingPowerForOrder(
-                parameters.Portfolio, security, parameters.Order
+                parameters.Portfolio, security, parameters.Orders.Single()
             );
         }
 
@@ -184,7 +184,7 @@ namespace QuantConnect.Securities.Positions
             var symbol = parameters.PositionGroup.Single().Symbol;
             var security = parameters.Portfolio.Securities[symbol];
             return security.BuyingPowerModel.HasSufficientBuyingPowerForOrder(
-                parameters.Portfolio, security, parameters.Order
+                parameters.Portfolio, security, parameters.Orders.Single()
             );
         }
     }

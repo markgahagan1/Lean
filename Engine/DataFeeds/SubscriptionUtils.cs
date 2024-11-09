@@ -40,8 +40,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>A new subscription instance ready to consume</returns>
         public static Subscription Create(
             SubscriptionRequest request,
-            IEnumerator<BaseData> enumerator)
+            IEnumerator<BaseData> enumerator,
+            bool dailyStrictEndTimeEnabled)
         {
+            if (enumerator == null)
+            {
+                return GetEndedSubscription(request);
+            }
             var exchangeHours = request.Security.Exchange.Hours;
             var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
             var dataEnumerator = new SubscriptionDataEnumerator(
@@ -49,7 +54,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 exchangeHours,
                 timeZoneOffsetProvider,
                 enumerator,
-                request.IsUniverseSubscription
+                request.IsUniverseSubscription,
+                dailyStrictEndTimeEnabled
             );
             return new Subscription(request, dataEnumerator, timeZoneOffsetProvider);
         }
@@ -67,8 +73,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             SubscriptionRequest request,
             IEnumerator<BaseData> enumerator,
             IFactorFileProvider factorFileProvider,
-            bool enablePriceScale)
+            bool enablePriceScale,
+            bool dailyStrictEndTimeEnabled)
         {
+            if(enumerator == null)
+            {
+                return GetEndedSubscription(request);
+            }
             var exchangeHours = request.Security.Exchange.Hours;
             var enqueueable = new EnqueueableEnumerator<SubscriptionData>(true);
             var timeZoneOffsetProvider = new TimeZoneOffsetProvider(request.Configuration.ExchangeTimeZone, request.StartTimeUtc, request.EndTimeUtc);
@@ -110,16 +121,18 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             requestMode = requestMode != DataNormalizationMode.Raw ? requestMode : DataNormalizationMode.Adjusted;
                         }
 
+                        var priceScaleFrontierDate = data.GetUpdatePriceScaleFrontier().Date;
+
                         // We update our price scale factor when the date changes for non fill forward bars or if we haven't initialized yet.
                         // We don't take into account auxiliary data because we don't scale it and because the underlying price data could be fill forwarded
-                        if (enablePriceScale && data?.Time.Date > lastTradableDate && data.DataType != MarketDataType.Auxiliary && (!data.IsFillForward || lastTradableDate == DateTime.MinValue))
+                        if (enablePriceScale && priceScaleFrontierDate > lastTradableDate && data.DataType != MarketDataType.Auxiliary && (!data.IsFillForward || lastTradableDate == DateTime.MinValue))
                         {
                             var factorFile = factorFileProvider.Get(request.Configuration.Symbol);
-                            lastTradableDate = data.Time.Date;
-                            request.Configuration.PriceScaleFactor = factorFile.GetPriceScale(data.Time.Date, requestMode, config.ContractDepthOffset, config.DataMappingMode);
+                            lastTradableDate = priceScaleFrontierDate;
+                            request.Configuration.PriceScaleFactor = factorFile.GetPriceScale(lastTradableDate, requestMode, config.ContractDepthOffset, config.DataMappingMode);
                         }
 
-                        SubscriptionData subscriptionData = SubscriptionData.Create(
+                        SubscriptionData subscriptionData = SubscriptionData.Create(dailyStrictEndTimeEnabled,
                             config,
                             exchangeHours,
                             subscription.OffsetProvider,
@@ -163,6 +176,17 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             );
 
             return subscription;
+        }
+
+        /// <summary>
+        /// Return an ended subscription so it doesn't blow up at runtime on the data worker, this can happen if there's no tradable date
+        /// </summary>
+        private static Subscription GetEndedSubscription(SubscriptionRequest request)
+        {
+            var result = new Subscription(request, null, null);
+            // set subscription as ended
+            result.Dispose();
+            return result;
         }
     }
 }

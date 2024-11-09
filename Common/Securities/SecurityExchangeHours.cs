@@ -32,19 +32,19 @@ namespace QuantConnect.Securities
     /// </remarks>
     public class SecurityExchangeHours
     {
-        private readonly HashSet<long> _holidays;
-        private readonly Dictionary<DateTime, TimeSpan> _earlyCloses;
-        private readonly Dictionary<DateTime, TimeSpan> _lateOpens;
+        private HashSet<long> _holidays;
+        private IReadOnlyDictionary<DateTime, TimeSpan> _earlyCloses;
+        private IReadOnlyDictionary<DateTime, TimeSpan> _lateOpens;
 
         // these are listed individually for speed
-        private readonly LocalMarketHours _sunday;
-        private readonly LocalMarketHours _monday;
-        private readonly LocalMarketHours _tuesday;
-        private readonly LocalMarketHours _wednesday;
-        private readonly LocalMarketHours _thursday;
-        private readonly LocalMarketHours _friday;
-        private readonly LocalMarketHours _saturday;
-        private readonly Dictionary<DayOfWeek, LocalMarketHours> _openHoursByDay;
+        private LocalMarketHours _sunday;
+        private LocalMarketHours _monday;
+        private LocalMarketHours _tuesday;
+        private LocalMarketHours _wednesday;
+        private LocalMarketHours _thursday;
+        private LocalMarketHours _friday;
+        private LocalMarketHours _saturday;
+        private Dictionary<DayOfWeek, LocalMarketHours> _openHoursByDay;
         private static List<DayOfWeek> daysOfWeek = new List<DayOfWeek>() {
                 DayOfWeek.Sunday,
                 DayOfWeek.Monday,
@@ -58,7 +58,7 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Gets the time zone this exchange resides in
         /// </summary>
-        public DateTimeZone TimeZone { get; }
+        public DateTimeZone TimeZone { get; private set; }
 
         /// <summary>
         /// Gets the holidays for the exchange
@@ -71,6 +71,11 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Gets the market hours for this exchange
         /// </summary>
+        /// <remarks>
+        /// This returns the regular schedule for each day, without taking into account special cases
+        /// such as holidays, early closes, or late opens.
+        /// In order to get the actual market hours for a specific date, use <see cref="GetMarketHours(DateTime)"/>
+        /// </remarks>
         public IReadOnlyDictionary<DayOfWeek, LocalMarketHours> MarketHours => _openHoursByDay;
 
         /// <summary>
@@ -89,7 +94,7 @@ namespace QuantConnect.Securities
         /// This does NOT account for extended market hours and only
         /// considers <see cref="MarketHoursState.Market"/>
         /// </summary>
-        public TimeSpan RegularMarketDuration { get; }
+        public TimeSpan RegularMarketDuration { get; private set; }
 
         /// <summary>
         /// Checks whether the market is always open or not
@@ -121,17 +126,15 @@ namespace QuantConnect.Securities
         public SecurityExchangeHours(
             DateTimeZone timeZone,
             IEnumerable<DateTime> holidayDates,
-            IReadOnlyDictionary<DayOfWeek, LocalMarketHours> marketHoursForEachDayOfWeek,
+            Dictionary<DayOfWeek, LocalMarketHours> marketHoursForEachDayOfWeek,
             IReadOnlyDictionary<DateTime, TimeSpan> earlyCloses,
             IReadOnlyDictionary<DateTime, TimeSpan> lateOpens)
         {
             TimeZone = timeZone;
             _holidays = holidayDates.Select(x => x.Date.Ticks).ToHashSet();
-            _earlyCloses = earlyCloses.ToDictionary(x => x.Key.Date, x => x.Value);
-            _lateOpens = lateOpens.ToDictionary(x => x.Key.Date, x => x.Value);
-
-            // make a copy of the dictionary for internal use
-            _openHoursByDay = new Dictionary<DayOfWeek, LocalMarketHours>(marketHoursForEachDayOfWeek.ToDictionary());
+            _earlyCloses = earlyCloses;
+            _lateOpens = lateOpens;
+            _openHoursByDay = marketHoursForEachDayOfWeek;
 
             SetMarketHoursForDay(DayOfWeek.Sunday, out _sunday);
             SetMarketHoursForDay(DayOfWeek.Monday, out _monday);
@@ -154,16 +157,11 @@ namespace QuantConnect.Securities
         /// Determines if the exchange is open at the specified local date time.
         /// </summary>
         /// <param name="localDateTime">The time to check represented as a local time</param>
-        /// <param name="extendedMarket">True to use the extended market hours, false for just regular market hours</param>
+        /// <param name="extendedMarketHours">True to use the extended market hours, false for just regular market hours</param>
         /// <returns>True if the exchange is considered open at the specified time, false otherwise</returns>
-        public bool IsOpen(DateTime localDateTime, bool extendedMarket)
+        public bool IsOpen(DateTime localDateTime, bool extendedMarketHours)
         {
-            if (_holidays.Contains(localDateTime.Date.Ticks) || IsTimeAfterEarlyClose(localDateTime) || IsTimeBeforeLateOpen(localDateTime))
-            {
-                return false;
-            }
-
-            return GetMarketHours(localDateTime).IsOpen(localDateTime.TimeOfDay, extendedMarket);
+            return GetMarketHours(localDateTime).IsOpen(localDateTime.TimeOfDay, extendedMarketHours);
         }
 
         /// <summary>
@@ -171,15 +169,15 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="startLocalDateTime">The start of the interval in local time</param>
         /// <param name="endLocalDateTime">The end of the interval in local time</param>
-        /// <param name="extendedMarket">True to use the extended market hours, false for just regular market hours</param>
+        /// <param name="extendedMarketHours">True to use the extended market hours, false for just regular market hours</param>
         /// <returns>True if the exchange is considered open at the specified time, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsOpen(DateTime startLocalDateTime, DateTime endLocalDateTime, bool extendedMarket)
+        public bool IsOpen(DateTime startLocalDateTime, DateTime endLocalDateTime, bool extendedMarketHours)
         {
             if (startLocalDateTime == endLocalDateTime)
             {
                 // if we're testing an instantaneous moment, use the other function
-                return IsOpen(startLocalDateTime, extendedMarket);
+                return IsOpen(startLocalDateTime, extendedMarketHours);
             }
 
             // we must make intra-day requests to LocalMarketHours, so check for a day gap
@@ -191,7 +189,7 @@ namespace QuantConnect.Securities
                 {
                     // check to see if the market is open
                     var marketHours = GetMarketHours(start);
-                    if (marketHours.IsOpen(start.TimeOfDay, end.TimeOfDay, extendedMarket))
+                    if (marketHours.IsOpen(start.TimeOfDay, end.TimeOfDay, extendedMarketHours))
                     {
                         return true;
                     }
@@ -209,8 +207,9 @@ namespace QuantConnect.Securities
         /// Determines if the exchange will be open on the date specified by the local date time
         /// </summary>
         /// <param name="localDateTime">The date time to check if the day is open</param>
+        /// <param name="extendedMarketHours">True to consider days with extended market hours only as open</param>
         /// <returns>True if the exchange will be open on the specified date, false otherwise</returns>
-        public bool IsDateOpen(DateTime localDateTime)
+        public bool IsDateOpen(DateTime localDateTime, bool extendedMarketHours = false)
         {
             var marketHours = GetMarketHours(localDateTime);
             if (marketHours.IsClosedAllDay)
@@ -219,21 +218,25 @@ namespace QuantConnect.Securities
                 return false;
             }
 
-            // if we don't have a holiday then we're open
-            return !_holidays.Contains(localDateTime.Date.Ticks);
+            if (marketHours.MarketDuration == TimeSpan.Zero)
+            {
+                // this date only has extended market hours, like sunday for futures, so we only return true if 'extendedMarketHours'
+                return extendedMarketHours;
+            }
+            return true;
         }
 
         /// <summary>
         /// Gets the local date time corresponding to the previous market open to the specified time
         /// </summary>
         /// <param name="localDateTime">The time to begin searching for the last market open (non-inclusive)</param>
-        /// <param name="extendedMarket">True to include extended market hours in the search</param>
+        /// <param name="extendedMarketHours">True to include extended market hours in the search</param>
         /// <returns>The previous market opening date time to the specified local date time</returns>
-        public DateTime GetPreviousMarketOpen(DateTime localDateTime, bool extendedMarket)
+        public DateTime GetPreviousMarketOpen(DateTime localDateTime, bool extendedMarketHours)
         {
             var time = localDateTime;
             var marketHours = GetMarketHours(time);
-            var nextMarketOpen = GetNextMarketOpen(time, extendedMarket);
+            var nextMarketOpen = GetNextMarketOpen(time, extendedMarketHours);
 
             if (localDateTime == nextMarketOpen)
             {
@@ -246,11 +249,11 @@ namespace QuantConnect.Securities
                 foreach(var segment in marketHours.Segments.Reverse())
                 {
                     if ((time.Date + segment.Start <= localDateTime) &&
-                        (segment.State == MarketHoursState.Market || extendedMarket))
+                        (segment.State == MarketHoursState.Market || extendedMarketHours))
                     {
                         // Check the current segment is not part of another segment before
                         var timeOfDay = time.Date + segment.Start;
-                        if (GetNextMarketOpen(timeOfDay.AddTicks(-1), extendedMarket) == timeOfDay)
+                        if (GetNextMarketOpen(timeOfDay.AddTicks(-1), extendedMarketHours) == timeOfDay)
                         {
                             return timeOfDay;
                         }
@@ -261,16 +264,16 @@ namespace QuantConnect.Securities
                 marketHours = GetMarketHours(time);
             }
 
-            throw new InvalidOperationException($"Did not find last market open for {localDateTime}. IsMarketAlwaysOpen: {IsMarketAlwaysOpen}");
+            throw new InvalidOperationException(Messages.SecurityExchangeHours.LastMarketOpenNotFound(localDateTime, IsMarketAlwaysOpen));
         }
 
         /// <summary>
         /// Gets the local date time corresponding to the next market open following the specified time
         /// </summary>
         /// <param name="localDateTime">The time to begin searching for market open (non-inclusive)</param>
-        /// <param name="extendedMarket">True to include extended market hours in the search</param>
+        /// <param name="extendedMarketHours">True to include extended market hours in the search</param>
         /// <returns>The next market opening date time following the specified local date time</returns>
-        public DateTime GetNextMarketOpen(DateTime localDateTime, bool extendedMarket)
+        public DateTime GetNextMarketOpen(DateTime localDateTime, bool extendedMarketHours)
         {
             var time = localDateTime;
             var oneWeekLater = localDateTime.Date.AddDays(15);
@@ -283,7 +286,7 @@ namespace QuantConnect.Securities
                 var marketHours = GetMarketHours(time);
                 if (!marketHours.IsClosedAllDay && !_holidays.Contains(time.Date.Ticks))
                 {
-                    var marketOpenTimeOfDay = marketHours.GetMarketOpen(time.TimeOfDay, extendedMarket, lastDaySegment?.End);
+                    var marketOpenTimeOfDay = marketHours.GetMarketOpen(time.TimeOfDay, extendedMarketHours, lastDaySegment?.End);
                     if (marketOpenTimeOfDay.HasValue)
                     {
                         var marketOpen = time.Date + marketOpenTimeOfDay.Value;
@@ -314,16 +317,16 @@ namespace QuantConnect.Securities
             }
             while (time < oneWeekLater);
 
-            throw new ArgumentException("Unable to locate next market open within two weeks.");
+            throw new ArgumentException(Messages.SecurityExchangeHours.UnableToLocateNextMarketOpenInTwoWeeks);
         }
 
         /// <summary>
         /// Gets the local date time corresponding to the next market close following the specified time
         /// </summary>
         /// <param name="localDateTime">The time to begin searching for market close (non-inclusive)</param>
-        /// <param name="extendedMarket">True to include extended market hours in the search</param>
+        /// <param name="extendedMarketHours">True to include extended market hours in the search</param>
         /// <returns>The next market closing date time following the specified local date time</returns>
-        public DateTime GetNextMarketClose(DateTime localDateTime, bool extendedMarket)
+        public DateTime GetNextMarketClose(DateTime localDateTime, bool extendedMarketHours)
         {
             var time = localDateTime;
             var oneWeekLater = localDateTime.Date.AddDays(15);
@@ -337,7 +340,7 @@ namespace QuantConnect.Securities
                     // the next day first segment for the case in which the next market close is the last segment
                     // of the current day
                     var nextSegment = GetNextOrPreviousSegment(time, isNextDay: true);
-                    var marketCloseTimeOfDay = marketHours.GetMarketClose(time.TimeOfDay, extendedMarket, nextSegment?.Start);
+                    var marketCloseTimeOfDay = marketHours.GetMarketClose(time.TimeOfDay, extendedMarketHours, nextSegment?.Start);
                     if (marketCloseTimeOfDay.HasValue)
                     {
                         var marketClose = time.Date + marketCloseTimeOfDay.Value;
@@ -352,7 +355,7 @@ namespace QuantConnect.Securities
             }
             while (time < oneWeekLater);
 
-            throw new ArgumentException("Unable to locate next market close within two weeks.");
+            throw new ArgumentException(Messages.SecurityExchangeHours.UnableToLocateNextMarketCloseInTwoWeeks);
         }
 
         /// <summary>
@@ -435,8 +438,19 @@ namespace QuantConnect.Securities
         /// Helper to access the market hours field based on the day of week
         /// </summary>
         /// <param name="localDateTime">The local date time to retrieve market hours for</param>
+        /// <remarks>
+        /// This method will return an adjusted instance of <see cref="LocalMarketHours"/> for the specified date,
+        /// that is, it will account for holidays, early closes, and late opens (e.g. if the security trades regularly on Mondays,
+        /// but a specific Monday is a holiday, this method will return a <see cref="LocalMarketHours"/> that is closed all day).
+        /// In order to get the regular schedule, use the <see cref="MarketHours"/> property.
+        /// </remarks>
         public LocalMarketHours GetMarketHours(DateTime localDateTime)
         {
+            if (_holidays.Contains(localDateTime.Date.Ticks))
+            {
+                return new LocalMarketHours(localDateTime.DayOfWeek);
+            }
+
             LocalMarketHours marketHours;
             switch (localDateTime.DayOfWeek)
             {
@@ -465,16 +479,26 @@ namespace QuantConnect.Securities
                     throw new ArgumentOutOfRangeException(nameof(localDateTime), localDateTime, null);
             }
 
+            var hasEarlyClose = _earlyCloses.TryGetValue(localDateTime.Date, out var earlyCloseTime);
+            var hasLateOpen = _lateOpens.TryGetValue(localDateTime.Date, out var lateOpenTime);
+            if (!hasEarlyClose && !hasLateOpen)
+            {
+                return marketHours;
+            }
+
+            IReadOnlyList<MarketHoursSegment> marketHoursSegments = marketHours.Segments;
+
             // If the earlyCloseTime is between a segment, change the close time with it
             // and add it after the segments prior to the earlyCloseTime
             // Otherwise, just take the segments prior to the earlyCloseTime
-            if (_earlyCloses.TryGetValue(localDateTime.Date, out var earlyCloseTime))
+            List<MarketHoursSegment> segmentsEarlyClose = null;
+            if (hasEarlyClose)
             {
-                var index = marketHours.Segments.Count;
+                var index = marketHoursSegments.Count;
                 MarketHoursSegment newSegment = null;
-                for (var i = 0; i < marketHours.Segments.Count; i++)
+                for (var i = 0; i < marketHoursSegments.Count; i++)
                 {
-                    var segment = marketHours.Segments[i];
+                    var segment = marketHoursSegments[i];
                     if (segment.Start <= earlyCloseTime && earlyCloseTime <= segment.End)
                     {
                         newSegment = new MarketHoursSegment(segment.State, segment.Start, earlyCloseTime);
@@ -489,27 +513,36 @@ namespace QuantConnect.Securities
                     }
                 }
 
-                var newSegments = new List<MarketHoursSegment>(marketHours.Segments.Take(index));
+                segmentsEarlyClose = new List<MarketHoursSegment>(marketHoursSegments.Take(index));
                 if (newSegment != null)
                 {
-                    newSegments.Add(newSegment);
+                    segmentsEarlyClose.Add(newSegment);
                 }
-                marketHours = new LocalMarketHours(localDateTime.DayOfWeek, newSegments);
+            }
+
+            // It could be the case we have a late open after an early close (the market resumes after the early close), in that case, we should take
+            // the segments before the early close and the the segments after the late opens and append them. Therefore, if that's not the case, this is,
+            // if there was an early close but there is not a late open or it's before the early close, we need to update the variable marketHours with
+            // the value of newMarketHours, so that it contains the segments before the early close
+            if (segmentsEarlyClose != null && (!hasLateOpen || earlyCloseTime >= lateOpenTime))
+            {
+                marketHoursSegments = segmentsEarlyClose;
             }
 
             // If the lateOpenTime is between a segment, change the start time with it
             // and add it before the segments previous to the lateOpenTime
             // Otherwise, just take the segments previous to the lateOpenTime
-            if (_lateOpens.TryGetValue(localDateTime.Date, out var lateOpenTime))
+            List<MarketHoursSegment> segmentsLateOpen = null;
+            if (hasLateOpen)
             {
                 var index = 0;
-                var newSegments = new List<MarketHoursSegment>();
-                for(var i = 0; i < marketHours.Segments.Count; i++)
+                segmentsLateOpen = new List<MarketHoursSegment>();
+                for(var i = 0; i < marketHoursSegments.Count; i++)
                 {
-                    var segment = marketHours.Segments[i];
+                    var segment = marketHoursSegments[i];
                     if (segment.Start <= lateOpenTime && lateOpenTime <= segment.End)
                     {
-                        newSegments.Add(new (segment.State, lateOpenTime, segment.End));
+                        segmentsLateOpen.Add(new (segment.State, lateOpenTime, segment.End));
                         index = i + 1;
                         break;
                     }
@@ -520,29 +553,19 @@ namespace QuantConnect.Securities
                     }
                 }
 
-                newSegments.AddRange(marketHours.Segments.TakeLast(marketHours.Segments.Count - index));
-                marketHours = new LocalMarketHours(localDateTime.DayOfWeek, newSegments);
+                segmentsLateOpen.AddRange(marketHoursSegments.TakeLast(marketHoursSegments.Count - index));
+                marketHoursSegments = segmentsLateOpen;
             }
 
-            return marketHours;
-        }
+            // Since it could be the case we have a late open after an early close (the market resumes after the early close), we need to take
+            // the segments before the early close and the segments after the late open and append them to obtain the expected market hours
+            if (segmentsEarlyClose != null && hasLateOpen && earlyCloseTime <= lateOpenTime)
+            {
+                segmentsEarlyClose.AddRange(segmentsLateOpen);
+                marketHoursSegments = segmentsEarlyClose;
+            }
 
-        /// <summary>
-        /// Helper to determine if the current time is after a market early close
-        /// </summary>
-        private bool IsTimeAfterEarlyClose(DateTime localDateTime)
-        {
-            TimeSpan earlyCloseTime;
-            return _earlyCloses.TryGetValue(localDateTime.Date, out earlyCloseTime) && localDateTime.TimeOfDay >= earlyCloseTime;
-        }
-
-        /// <summary>
-        /// Helper to determine if the current time is before a market late open
-        /// </summary>
-        private bool IsTimeBeforeLateOpen(DateTime localDateTime)
-        {
-            TimeSpan lateOpenTime;
-            return _lateOpens.TryGetValue(localDateTime.Date, out lateOpenTime) && localDateTime.TimeOfDay <= lateOpenTime;
+            return new LocalMarketHours(localDateTime.DayOfWeek, marketHoursSegments);
         }
 
         /// <summary>
@@ -575,6 +598,33 @@ namespace QuantConnect.Securities
             }
 
             return date;
+        }
+
+        /// <summary>
+        /// Sets the exchange hours to be the same as the given exchange hours without changing the reference
+        /// </summary>
+        /// <param name="other">The hours to set</param>
+        internal void Update(SecurityExchangeHours other)
+        {
+            if (other == null)
+            {
+                return;
+            }
+
+            _holidays = other._holidays;
+            _earlyCloses = other._earlyCloses;
+            _lateOpens = other._lateOpens;
+            _sunday = other._sunday;
+            _monday = other._monday;
+            _tuesday = other._tuesday;
+            _wednesday = other._wednesday;
+            _thursday = other._thursday;
+            _friday = other._friday;
+            _saturday = other._saturday;
+            _openHoursByDay = other._openHoursByDay;
+            TimeZone = other.TimeZone;
+            RegularMarketDuration = other.RegularMarketDuration;
+            IsMarketAlwaysOpen = other.IsMarketAlwaysOpen;
         }
     }
 }

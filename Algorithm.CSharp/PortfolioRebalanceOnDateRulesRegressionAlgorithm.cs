@@ -41,6 +41,10 @@ namespace QuantConnect.Algorithm.CSharp
             // Commented so regression algorithm is more sensitive
             //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
 
+            // let's use 0 minimum order margin percentage so we can assert trades are only submitted immediately after rebalance on Wednesday
+            // if not, due to TPV variations happening every day we might no cross the minimum on wednesday but yes another day of the week
+            Settings.MinimumOrderMarginPortfolioPercentage = 0m;
+
             SetStartDate(2015, 1, 1);
             SetEndDate(2017, 1, 1);
 
@@ -63,7 +67,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Debug($"{orderEvent}");
                 if (UtcTime.DayOfWeek != DayOfWeek.Wednesday)
                 {
-                    throw new Exception($"{UtcTime} {orderEvent.Symbol} {UtcTime.DayOfWeek}");
+                    throw new RegressionTestException($"{UtcTime} {orderEvent.Symbol} {UtcTime.DayOfWeek}");
                 }
             }
         }
@@ -76,12 +80,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 6075;
+        public long DataPoints => 6072;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -89,52 +93,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "362"},
+            {"Total Orders", "346"},
             {"Average Win", "0.06%"},
             {"Average Loss", "-0.03%"},
-            {"Compounding Annual Return", "11.407%"},
-            {"Drawdown", "18.200%"},
-            {"Expectancy", "1.300"},
-            {"Net Profit", "24.116%"},
-            {"Sharpe Ratio", "0.626"},
-            {"Probabilistic Sharpe Ratio", "24.868%"},
+            {"Compounding Annual Return", "10.796%"},
+            {"Drawdown", "18.300%"},
+            {"Expectancy", "1.277"},
+            {"Start Equity", "100000"},
+            {"End Equity", "122745.47"},
+            {"Net Profit", "22.745%"},
+            {"Sharpe Ratio", "0.535"},
+            {"Sortino Ratio", "0.625"},
+            {"Probabilistic Sharpe Ratio", "23.534%"},
             {"Loss Rate", "24%"},
             {"Win Rate", "76%"},
-            {"Profit-Loss Ratio", "2.01"},
-            {"Alpha", "0.035"},
-            {"Beta", "1.019"},
-            {"Annual Standard Deviation", "0.141"},
+            {"Profit-Loss Ratio", "1.98"},
+            {"Alpha", "0.031"},
+            {"Beta", "1.015"},
+            {"Annual Standard Deviation", "0.14"},
             {"Annual Variance", "0.02"},
-            {"Information Ratio", "0.504"},
+            {"Information Ratio", "0.448"},
             {"Tracking Error", "0.072"},
-            {"Treynor Ratio", "0.087"},
-            {"Total Fees", "$366.83"},
-            {"Estimated Strategy Capacity", "$40000000.00"},
+            {"Treynor Ratio", "0.074"},
+            {"Total Fees", "$350.77"},
+            {"Estimated Strategy Capacity", "$91000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.002"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "0.949"},
-            {"Return Over Maximum Drawdown", "0.625"},
-            {"Portfolio Turnover", "0.003"},
-            {"Total Insights Generated", "2028"},
-            {"Total Insights Closed", "2024"},
-            {"Total Insights Analysis Completed", "2024"},
-            {"Long Insight Count", "2028"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "20d5c49aff16826f5a7fba8f3b9c23f2"}
+            {"Portfolio Turnover", "0.31%"},
+            {"OrderListHash", "1da61b0a1129e5eab9bc36bd9dae6f40"}
         };
     }
 }

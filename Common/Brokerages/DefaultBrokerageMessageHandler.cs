@@ -22,7 +22,6 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
 using QuantConnect.Util;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Brokerages
 {
@@ -40,12 +39,21 @@ namespace QuantConnect.Brokerages
 
         private volatile bool _connected;
 
-        private readonly IApi _api;
         private readonly IAlgorithm _algorithm;
         private readonly TimeSpan _openThreshold;
-        private readonly AlgorithmNodePacket _job;
         private readonly TimeSpan _initialDelay;
         private CancellationTokenSource _cancellationTokenSource;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DefaultBrokerageMessageHandler"/> class
+        /// </summary>
+        /// <param name="algorithm">The running algorithm</param>
+        /// <param name="initialDelay"></param>
+        /// <param name="openThreshold">Defines how long before market open to re-check for brokerage reconnect message</param>
+        public DefaultBrokerageMessageHandler(IAlgorithm algorithm, TimeSpan? initialDelay = null, TimeSpan? openThreshold = null)
+            : this(algorithm, null, null, initialDelay, openThreshold)
+        {
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DefaultBrokerageMessageHandler"/> class
@@ -57,8 +65,6 @@ namespace QuantConnect.Brokerages
         /// <param name="openThreshold">Defines how long before market open to re-check for brokerage reconnect message</param>
         public DefaultBrokerageMessageHandler(IAlgorithm algorithm, AlgorithmNodePacket job, IApi api, TimeSpan? initialDelay = null, TimeSpan? openThreshold = null)
         {
-            _api = api;
-            _job = job;
             _algorithm = algorithm;
             _connected = true;
             _openThreshold = openThreshold ?? DefaultOpenThreshold;
@@ -69,27 +75,28 @@ namespace QuantConnect.Brokerages
         /// Handles the message
         /// </summary>
         /// <param name="message">The message to be handled</param>
-        public void Handle(BrokerageMessageEvent message)
+        public void HandleMessage(BrokerageMessageEvent message)
         {
             // based on message type dispatch to result handler
             switch (message.Type)
             {
                 case BrokerageMessageType.Information:
-                    _algorithm.Debug($"Brokerage Info: {message.Message}");
+                    _algorithm.Debug(Messages.DefaultBrokerageMessageHandler.BrokerageInfo(message));
                     break;
 
                 case BrokerageMessageType.Warning:
-                    _algorithm.Error($"Brokerage Warning: {message.Message}");
+                    _algorithm.Error(Messages.DefaultBrokerageMessageHandler.BrokerageWarning(message));
                     break;
 
                 case BrokerageMessageType.Error:
                     // unexpected error, we need to close down shop
-                    _algorithm.SetRuntimeError(new Exception(message.Message), "Brokerage Error");
+                    _algorithm.SetRuntimeError(new Exception(message.Message),
+                        Messages.DefaultBrokerageMessageHandler.BrokerageErrorContext);
                     break;
 
                 case BrokerageMessageType.Disconnect:
                     _connected = false;
-                    Log.Trace("DefaultBrokerageMessageHandler.Handle(): Disconnected.");
+                    Log.Trace(Messages.DefaultBrokerageMessageHandler.Disconnected);
 
                     // check to see if any non-custom security exchanges are open within the next x minutes
                     var open = (from kvp in _algorithm.Securities
@@ -108,16 +115,14 @@ namespace QuantConnect.Brokerages
                     // if any are open then we need to kill the algorithm
                     if (open)
                     {
-                        Log.Trace("DefaultBrokerageMessageHandler.Handle(): Disconnect when exchanges are open, " +
-                            Invariant($"trying to reconnect for {_initialDelay.TotalMinutes} minutes.")
-                        );
+                        Log.Trace(Messages.DefaultBrokerageMessageHandler.DisconnectedWhenExchangesAreOpen(_initialDelay));
 
                         // wait 15 minutes before killing algorithm
                         StartCheckReconnected(_initialDelay, message);
                     }
                     else
                     {
-                        Log.Trace("DefaultBrokerageMessageHandler.Handle(): Disconnect when exchanges are closed, checking back before exchange open.");
+                        Log.Trace(Messages.DefaultBrokerageMessageHandler.DisconnectedWhenExchangesAreClosed);
 
                         // if they aren't open, we'll need to check again a little bit before markets open
                         DateTime nextMarketOpenUtc;
@@ -142,7 +147,7 @@ namespace QuantConnect.Brokerages
                         }
 
                         var timeUntilNextMarketOpen = nextMarketOpenUtc - DateTime.UtcNow - _openThreshold;
-                        Log.Trace(Invariant($"DefaultBrokerageMessageHandler.Handle(): TimeUntilNextMarketOpen: {timeUntilNextMarketOpen}"));
+                        Log.Trace(Messages.DefaultBrokerageMessageHandler.TimeUntilNextMarketOpen(timeUntilNextMarketOpen));
 
                         // wake up 5 minutes before market open and check if we've reconnected
                         StartCheckReconnected(timeUntilNextMarketOpen, message);
@@ -151,7 +156,7 @@ namespace QuantConnect.Brokerages
 
                 case BrokerageMessageType.Reconnect:
                     _connected = true;
-                    Log.Trace("DefaultBrokerageMessageHandler.Handle(): Reconnected.");
+                    Log.Trace(Messages.DefaultBrokerageMessageHandler.Reconnected);
 
                     if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
                     {
@@ -159,6 +164,16 @@ namespace QuantConnect.Brokerages
                     }
                     break;
             }
+        }
+
+        /// <summary>
+        /// Handles a new order placed manually in the brokerage side
+        /// </summary>
+        /// <param name="eventArgs">The new order event</param>
+        /// <returns>Whether the order should be added to the transaction handler</returns>
+        public bool HandleOrder(NewBrokerageOrderNotificationEventArgs eventArgs)
+        {
+            return false;
         }
 
         private void StartCheckReconnected(TimeSpan delay, BrokerageMessageEvent message)
@@ -182,8 +197,9 @@ namespace QuantConnect.Brokerages
         {
             if (!_connected)
             {
-                Log.Error("DefaultBrokerageMessageHandler.Handle(): Still disconnected, goodbye.");
-                _algorithm.SetRuntimeError(new Exception(message.Message), "Brokerage Disconnect");
+                Log.Error(Messages.DefaultBrokerageMessageHandler.StillDisconnected);
+                _algorithm.SetRuntimeError(new Exception(message.Message),
+                    Messages.DefaultBrokerageMessageHandler.BrokerageDisconnectedShutDownContext);
             }
         }
     }

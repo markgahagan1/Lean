@@ -33,7 +33,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void Initialize()
         {
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
-            EnableAutomaticIndicatorWarmUp = true;
+            Settings.AutomaticIndicatorWarmUp = true;
             SetStartDate(2013, 10, 08);
             SetEndDate(2013, 10, 10);
 
@@ -82,7 +82,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (!sma11.Current.Equals(sma1.Current))
             {
-                throw new Exception("Expected SMAs warmed up before and after adding the Future to the algorithm to have the same current value. " +
+                throw new RegressionTestException("Expected SMAs warmed up before and after adding the Future to the algorithm to have the same current value. " +
                                     "The result of 'WarmUpIndicator' shouldn't change if the symbol is or isn't subscribed");
             }
 
@@ -94,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (!smaSpy.Current.Equals(sma.Current))
             {
-                throw new Exception("Expected SMAs warmed up before and after adding the Equity to the algorithm to have the same current value. " +
+                throw new RegressionTestException("Expected SMAs warmed up before and after adding the Equity to the algorithm to have the same current value. " +
                                     "The result of 'WarmUpIndicator' shouldn't change if the symbol is or isn't subscribed");
             }
         }
@@ -103,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (indicator.IsReady != isReady)
             {
-                throw new Exception($"Expected indicator state, expected {isReady} but was {indicator.IsReady}");
+                throw new RegressionTestException($"Expected indicator state, expected {isReady} but was {indicator.IsReady}");
             }
         }
 
@@ -111,7 +111,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -141,7 +141,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -154,52 +154,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 84;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "733913.744%"},
             {"Drawdown", "15.900%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "106827.7"},
             {"Net Profit", "6.828%"},
-            {"Sharpe Ratio", "203744786353.302"},
+            {"Sharpe Ratio", "203744786353.299"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "456382350698.561"},
+            {"Alpha", "456382350698.622"},
             {"Beta", "9.229"},
             {"Annual Standard Deviation", "2.24"},
             {"Annual Variance", "5.017"},
             {"Information Ratio", "228504036840.953"},
             {"Tracking Error", "1.997"},
-            {"Treynor Ratio", "49450701625.718"},
+            {"Treynor Ratio", "49450701625.717"},
             {"Total Fees", "$23.65"},
             {"Estimated Strategy Capacity", "$200000000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.518"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-7.708"},
-            {"Portfolio Turnover", "5.277"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "dd38e7b94027d20942a5aa9ac31a9a7f"}
+            {"Portfolio Turnover", "351.80%"},
+            {"OrderListHash", "dfd9a280d3c6470b305c03e0b72c234e"}
         };
     }
 }

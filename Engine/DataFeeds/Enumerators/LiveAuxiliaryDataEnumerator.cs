@@ -1,4 +1,4 @@
-﻿/*
+/*
 * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
 *
@@ -56,6 +56,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
             Initialize();
         }
 
+        /// <summary>
+        /// Moves the LiveAuxiliaryDataEnumerator to the next item
+        /// </summary>
         public override bool MoveNext()
         {
             var currentDate = _timeProvider.GetUtcNow().ConvertFromUtc(Config.ExchangeTimeZone).Add(-Time.LiveAuxiliaryDataOffset).Date;
@@ -76,7 +79,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
         /// Helper method to create a new instance.
         /// Knows which security types should create one and determines the appropriate delisting event provider to use
         /// </summary>
-        public static bool TryCreate(SubscriptionDataConfig dataConfig, ITimeProvider timeProvider, IDataQueueHandler dataQueueHandler,
+        public static bool TryCreate(SubscriptionDataConfig dataConfig, ITimeProvider timeProvider,
             SecurityCache securityCache, IMapFileProvider mapFileProvider, IFactorFileProvider fileProvider, DateTime startTime,
             out IEnumerator<BaseData> enumerator)
         {
@@ -87,13 +90,19 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
                 var providers = new List<ITradableDateEventProvider>
                 {
                     securityType == SecurityType.Equity
-                        ? new LiveDataBasedDelistingEventProvider(dataConfig, dataQueueHandler)
+                        ? new LiveDelistingEventProvider()
                         : new DelistingEventProvider()
                 };
 
                 if (dataConfig.TickerShouldBeMapped())
                 {
                     providers.Add(new LiveMappingEventProvider());
+                }
+
+                if (dataConfig.EmitSplitsAndDividends())
+                {
+                    providers.Add(new LiveDividendEventProvider());
+                    providers.Add(new LiveSplitEventProvider());
                 }
 
                 enumerator = new LiveAuxiliaryDataEnumerator(dataConfig, fileProvider, mapFileProvider,

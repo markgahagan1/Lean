@@ -15,7 +15,6 @@
 
 using System;
 using QuantConnect.Securities;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Orders.Fees
 {
@@ -29,9 +28,16 @@ namespace QuantConnect.Orders.Fees
     /// </summary>
     public class ExanteFeeModel : FeeModel
     {
+        /// <summary>
+        /// Market USA rate
+        /// </summary>
         public const decimal MarketUsaRate = 0.02m;
+
+        /// <summary>
+        /// Default rate
+        /// </summary>
         public const decimal DefaultRate = 0.02m;
-        
+
         private readonly decimal _forexCommissionRate;
 
         /// <summary>
@@ -84,7 +90,7 @@ namespace QuantConnect.Orders.Fees
                     break;
 
                 default:
-                    throw new ArgumentException(Invariant($"Unsupported security type: {security.Type}"));
+                    throw new ArgumentException(Messages.FeeModel.UnsupportedSecurityType(security));
             }
 
             return new OrderFee(new CashAmount(feeResult, feeCurrency));
@@ -117,7 +123,7 @@ namespace QuantConnect.Orders.Fees
                 Market.USA => new CashAmount(order.AbsoluteQuantity * 1.5m, Currencies.USD),
                 _ =>
                     // ToDo: clarify the value for different exchanges
-                    throw new ArgumentException(Invariant($"Unsupported exchange: ${order.Symbol.ID.Market}"))
+                    throw new ArgumentException(Messages.ExanteFeeModel.UnsupportedExchange(order))
             };
         }
     }

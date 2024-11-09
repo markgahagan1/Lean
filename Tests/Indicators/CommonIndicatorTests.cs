@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -17,6 +17,7 @@ using System;
 using NUnit.Framework;
 using Python.Runtime;
 using QuantConnect.Data;
+using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 
@@ -25,6 +26,7 @@ namespace QuantConnect.Tests.Indicators
     public abstract class CommonIndicatorTests<T>
         where T : IBaseData
     {
+        protected Symbol Symbol { get; set; } = Symbols.SPY;
         [Test]
         public virtual void ComparesAgainstExternalData()
         {
@@ -94,22 +96,95 @@ namespace QuantConnect.Tests.Indicators
             Assert.AreEqual(1, indicator.Samples);
         }
 
-        protected static IBaseData GetInput(DateTime startDate, int value) => GetInput(Symbols.SPY, startDate, value);
+        [Test]
+        public virtual void AcceptsRenkoBarsAsInput()
+        {
+            var indicator = CreateIndicator();
+            if (indicator is IndicatorBase<TradeBar> ||
+                indicator is IndicatorBase<IBaseData> ||
+                indicator is BarIndicator ||
+                indicator is IndicatorBase<IBaseDataBar>)
+            {
+                var renkoConsolidator = new RenkoConsolidator(RenkoBarSize);
+                renkoConsolidator.DataConsolidated += (sender, renkoBar) =>
+                {
+                    Assert.DoesNotThrow(() => indicator.Update(renkoBar));
+                };
 
-        protected static IBaseData GetInput(Symbol symbol, DateTime startDate, int value)
+                TestHelper.UpdateRenkoConsolidator(renkoConsolidator, TestFileName);
+                Assert.IsTrue(indicator.IsReady);
+                Assert.AreNotEqual(0, indicator.Samples);
+                IndicatorValueIsNotZeroAfterReceiveRenkoBars(indicator);
+                renkoConsolidator.Dispose();
+            }
+        }
+
+        [Test]
+        public virtual void AcceptsVolumeRenkoBarsAsInput()
+        {
+            var indicator = CreateIndicator();
+            if (indicator is IndicatorBase<TradeBar> ||
+                indicator is IndicatorBase<IBaseData> ||
+                indicator is BarIndicator ||
+                indicator is IndicatorBase<IBaseDataBar>)
+            {
+                var volumeRenkoConsolidator = new VolumeRenkoConsolidator(VolumeRenkoBarSize);
+                volumeRenkoConsolidator.DataConsolidated += (sender, volumeRenkoBar) =>
+                {
+                    Assert.DoesNotThrow(() => indicator.Update(volumeRenkoBar));
+                };
+
+                TestHelper.UpdateRenkoConsolidator(volumeRenkoConsolidator, TestFileName);
+                Assert.IsTrue(indicator.IsReady);
+                Assert.AreNotEqual(0, indicator.Samples);
+                IndicatorValueIsNotZeroAfterReceiveVolumeRenkoBars(indicator);
+                volumeRenkoConsolidator.Dispose();
+            }
+        }
+
+        [Test]
+        public virtual void WorksWithLowValues()
+        {
+            var indicator = CreateIndicator();
+            var period = (indicator as IIndicatorWarmUpPeriodProvider)?.WarmUpPeriod;
+
+            var random = new Random();
+            var time = new DateTime(2023, 5, 28);
+            for (int i = 0; i < 2 * period; i++)
+            {
+                var value = (decimal)(random.NextDouble() * 0.000000000000000000000000000001);
+                Assert.DoesNotThrow(() => indicator.Update(GetInput(Symbol, time, i, value, value, value, value)));
+            }
+        }
+
+        protected virtual void IndicatorValueIsNotZeroAfterReceiveRenkoBars(IndicatorBase indicator)
+        {
+            Assert.AreNotEqual(0, indicator.Current.Value);
+        }
+
+        protected virtual void IndicatorValueIsNotZeroAfterReceiveVolumeRenkoBars(IndicatorBase indicator)
+        {
+            Assert.AreNotEqual(0, indicator.Current.Value);
+        }
+
+        protected static IBaseData GetInput(DateTime startDate, int days) => GetInput(Symbols.SPY, startDate, days);
+
+        protected static IBaseData GetInput(Symbol symbol, DateTime startDate, int days) => GetInput(symbol, startDate, days, 100m + days, 105m + days, 95m + days, 100 + days);
+
+        protected static IBaseData GetInput(Symbol symbol, DateTime startDate, int days, decimal open, decimal high, decimal low, decimal close)
         {
             if (typeof(T) == typeof(IndicatorDataPoint))
             {
-                return new IndicatorDataPoint(startDate.AddDays(value), 100m);
+                return new IndicatorDataPoint(symbol, startDate.AddDays(days), close);
             }
 
             return new TradeBar(
-                startDate.AddDays(value),
+                startDate.AddDays(days),
                 symbol,
-                100m + value,
-                105m + value,
-                95m + value,
-                100m + value,
+                open,
+                high,
+                low,
+                close,
                 100m,
                 Time.OneDay
             );
@@ -149,8 +224,7 @@ namespace QuantConnect.Tests.Indicators
                     indicator as IndicatorBase<TradeBar>,
                     TestFileName,
                     TestColumnName,
-                    Assertion as Action<IndicatorBase<TradeBar>, double>
-                );
+                    Assertion as Action<IndicatorBase<TradeBar>, double>);
             else
                 throw new NotSupportedException("RunTestIndicator: Unsupported indicator data type: " + typeof(T));
         }
@@ -160,7 +234,16 @@ namespace QuantConnect.Tests.Indicators
         /// </summary>
         protected virtual Action<IndicatorBase<T>, double> Assertion
         {
-            get { return (indicator, expected) => Assert.AreEqual(expected, (double) indicator.Current.Value, 1e-3); }
+            get
+            {
+                return (indicator, expected) =>
+                {
+                    Assert.AreEqual(expected, (double)indicator.Current.Value, 1e-3);
+
+                    var relativeDifference = Math.Abs(((double)indicator.Current.Value - expected) / expected);
+                    Assert.LessOrEqual(relativeDifference, 1); // less than 1% error rate
+                };
+            }
         }
 
         /// <summary>
@@ -177,5 +260,15 @@ namespace QuantConnect.Tests.Indicators
         /// Returns the name of the column of the CSV file corresponding to the pre-calculated data for the indicator
         /// </summary>
         protected abstract string TestColumnName { get; }
+
+        /// <summary>
+        /// Returns the BarSize for the RenkoBar test, namely, AcceptsRenkoBarsAsInput()
+        /// </summary>
+        protected decimal RenkoBarSize { get; set; } = 10m;
+
+        /// <summary>
+        /// Returns the BarSize for the VolumeRenkoBar test, namely, AcceptsVolumeRenkoBarsAsInput()
+        /// </summary>
+        protected decimal VolumeRenkoBarSize { get; set; } = 500000m;
     }
 }

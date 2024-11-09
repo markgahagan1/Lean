@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -29,6 +29,7 @@ namespace QuantConnect.Securities
     /// </summary>
     public class UniverseManager : IDictionary<Symbol, Universe>, INotifyCollectionChanged
     {
+        private readonly Queue<NotifyCollectionChangedEventArgs> _pendingChanges = new();
         private readonly ConcurrentDictionary<Symbol, Universe> _universes;
 
         /// <summary>
@@ -161,15 +162,43 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Adds an element with the provided key and value to the <see cref="T:System.Collections.Generic.IDictionary`2"/>.
+        /// Adds an element with the provided key and value to the <see cref="System.Collections.Generic.IDictionary{TKey, TValue}"/>.
         /// </summary>
-        /// <param name="key">The object to use as the key of the element to add.</param><param name="universe">The object to use as the value of the element to add.</param><exception cref="T:System.ArgumentNullException"><paramref name="key"/> is null.</exception><exception cref="T:System.ArgumentException">An element with the same key already exists in the <see cref="T:System.Collections.Generic.IDictionary`2"/>.</exception><exception cref="T:System.NotSupportedException">The <see cref="T:System.Collections.Generic.IDictionary`2"/> is read-only.</exception>
-        public void Add(Symbol key, Universe universe)
+        /// <param name="key">The object to use as the key of the element to add.
+        /// </param><param name="value">The object to use as the value of the element to add.</param>
+        /// <exception cref="System.ArgumentNullException"><paramref name="key"/> is null.</exception>
+        /// <exception cref="System.ArgumentException">An element with the same key already exists in the <see cref="System.Collections.Generic.IDictionary{TKey, TValue}"/>.</exception>
+        /// <exception cref="System.NotSupportedException">The <see cref="System.Collections.Generic.IDictionary{TKey, TValue}"/> is read-only.</exception>
+        public void Add(Symbol key, Universe value)
         {
-            if (_universes.TryAdd(key, universe))
+            if (_universes.TryAdd(key, value))
             {
-                OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, universe));
+                lock(_pendingChanges)
+                {
+                    _pendingChanges.Enqueue(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, value));
+                }
             }
+        }
+
+        /// <summary>
+        /// Will trigger collection changed event if required
+        /// </summary>
+        public void ProcessChanges()
+        {
+            NotifyCollectionChangedEventArgs universeChange;
+            do
+            {
+                lock (_pendingChanges)
+                {
+                    _pendingChanges.TryDequeue(out universeChange);
+                }
+
+                if (universeChange != null)
+                {
+                    OnCollectionChanged(universeChange);
+                }
+            }
+            while (universeChange != null);
         }
 
         /// <summary>

@@ -14,11 +14,9 @@
 */
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using QuantConnect.Orders.Fills;
 using QuantConnect.Securities;
-using static QuantConnect.StringExtensions;
+using QuantConnect.Orders.Fills;
+using System.Collections.Generic;
 
 namespace QuantConnect.Orders.Fees
 {
@@ -34,15 +32,18 @@ namespace QuantConnect.Orders.Fees
         private readonly Dictionary<string, Func<decimal, decimal, CashAmount>> _optionFee =
             new Dictionary<string, Func<decimal, decimal, CashAmount>>();
 
+        #pragma warning disable CS1570
         /// <summary>
         /// Reference at https://www.interactivebrokers.com/en/index.php?f=commission&p=futures1
         /// </summary>
+        #pragma warning restore CS1570
         private readonly Dictionary<string, Func<Security, CashAmount>> _futureFee =
             //                                                               IB fee + exchange fee
             new()
             {
                 { Market.USA, UnitedStatesFutureFees },
-                { Market.HKFE, HongKongFutureFees }
+                { Market.HKFE, HongKongFutureFees },
+                { Market.EUREX, EUREXFutureFees }
             };
 
         /// <summary>
@@ -84,6 +85,7 @@ namespace QuantConnect.Orders.Fees
                 }
             }
 
+            var quantity = order.AbsoluteQuantity;
             decimal feeResult;
             string feeCurrency;
             var market = security.Symbol.ID.Market;
@@ -103,10 +105,10 @@ namespace QuantConnect.Orders.Fees
                     Func<decimal, decimal, CashAmount> optionsCommissionFunc;
                     if (!_optionFee.TryGetValue(market, out optionsCommissionFunc))
                     {
-                        throw new KeyNotFoundException($"InteractiveBrokersFeeModel(): unexpected option Market {market}");
+                        throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedOptionMarket(market));
                     }
                     // applying commission function to the order
-                    var optionFee = optionsCommissionFunc(order.AbsoluteQuantity, order.Price);
+                    var optionFee = optionsCommissionFunc(quantity, GetPotentialOrderPrice(order, security));
                     feeResult = optionFee.Amount;
                     feeCurrency = optionFee.Currency;
                     break;
@@ -125,11 +127,11 @@ namespace QuantConnect.Orders.Fees
 
                     if (!_futureFee.TryGetValue(market, out var feeRatePerContractFunc))
                     {
-                        throw new KeyNotFoundException($"InteractiveBrokersFeeModel(): unexpected future Market {market}");
+                        throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedFutureMarket(market));
                     }
 
                     var feeRatePerContract = feeRatePerContractFunc(security);
-                    feeResult = order.AbsoluteQuantity * feeRatePerContract.Amount;
+                    feeResult = quantity * feeRatePerContract.Amount;
                     feeCurrency = feeRatePerContract.Currency;
                     break;
 
@@ -144,12 +146,12 @@ namespace QuantConnect.Orders.Fees
                             equityFee = new EquityFee(Currencies.INR, feePerShare: 0.01m, minimumFee: 6, maximumFeeRate: 20);
                             break;
                         default:
-                            throw new KeyNotFoundException($"InteractiveBrokersFeeModel(): unexpected equity Market {market}");
+                            throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedEquityMarket(market));
                     }
                     var tradeValue = Math.Abs(order.GetValue(security));
 
                     //Per share fees
-                    var tradeFee = equityFee.FeePerShare * order.AbsoluteQuantity;
+                    var tradeFee = equityFee.FeePerShare * quantity;
 
                     //Maximum Per Order: equityFee.MaximumFeeRate
                     //Minimum per order. $equityFee.MinimumFee
@@ -168,14 +170,76 @@ namespace QuantConnect.Orders.Fees
                     feeResult = Math.Abs(tradeFee);
                     break;
 
+                case SecurityType.Cfd:
+                    var value = Math.Abs(order.GetValue(security));
+                    feeResult = 0.00002m * value; // 0.002%
+                    feeCurrency = security.QuoteCurrency.Symbol;
+
+                    var minimumFee = security.QuoteCurrency.Symbol switch
+                    {
+                        "JPY" => 40.0m,
+                        "HKD" => 10.0m,
+                        _ => 1.0m
+                    };
+                    feeResult = Math.Max(feeResult, minimumFee);
+                    break;
+
                 default:
                     // unsupported security type
-                    throw new ArgumentException(Invariant($"Unsupported security type: {security.Type}"));
+                    throw new ArgumentException(Messages.FeeModel.UnsupportedSecurityType(security));
             }
 
             return new OrderFee(new CashAmount(
                 feeResult,
                 feeCurrency));
+        }
+
+        /// <summary>
+        /// Approximates the order's price based on the order type
+        /// </summary>
+        protected static decimal GetPotentialOrderPrice(Order order, Security security)
+        {
+            decimal price = 0;
+            switch (order.Type)
+            {
+                case OrderType.TrailingStop:
+                    price = (order as TrailingStopOrder).StopPrice;
+                    break;
+                case OrderType.StopMarket:
+                    price = (order as StopMarketOrder).StopPrice;
+                    break;
+                case OrderType.ComboMarket:
+                case OrderType.MarketOnOpen:
+                case OrderType.MarketOnClose:
+                case OrderType.Market:
+                    decimal securityPrice;
+                    if (order.Direction == OrderDirection.Buy)
+                    {
+                        price = security.BidPrice;
+                    }
+                    else
+                    {
+                        price = security.AskPrice;
+                    }
+                    break;
+                case OrderType.ComboLimit:
+                    price = (order as ComboLimitOrder).GroupOrderManager.LimitPrice;
+                    break;
+                case OrderType.ComboLegLimit:
+                    price = (order as ComboLegLimitOrder).LimitPrice;
+                    break;
+                case OrderType.StopLimit:
+                    price = (order as StopLimitOrder).LimitPrice;
+                    break;
+                case OrderType.LimitIfTouched:
+                    price = (order as LimitIfTouchedOrder).LimitPrice;
+                    break;
+                case OrderType.Limit:
+                    price = (order as LimitOrder).LimitPrice;
+                    break;
+            }
+
+            return price;
         }
 
         /// <summary>
@@ -216,7 +280,7 @@ namespace QuantConnect.Orders.Fees
                 optionsCommissionFunc = (orderSize, premium) =>
                 {
                     var commissionRate = premium >= 0.1m ?
-                                            0.7m :
+                                            0.65m :
                                             (0.05m <= premium && premium < 0.1m ? 0.5m : 0.25m);
                     return new CashAmount(Math.Max(orderSize * commissionRate, 1.0m), Currencies.USD);
                 };
@@ -266,7 +330,7 @@ namespace QuantConnect.Orders.Fees
                     symbol = security.Symbol.Underlying.ID.Symbol;
                     break;
                 default:
-                    throw new ArgumentException(Invariant($"InteractiveBrokersFeeModel.UnitedStatesFutureFees(): Unsupported security type: {security.Type}"));
+                    throw new ArgumentException(Messages.InteractiveBrokersFeeModel.UnitedStatesFutureFeesUnsupportedSecurityType(security));
             }
 
             if (!fees.TryGetValue(symbol, out ibFeePerContract))
@@ -307,11 +371,42 @@ namespace QuantConnect.Orders.Fees
                     ibFeePerContract = 2.40m;
                     break;
                 default:
-                    throw new ArgumentException($"Unexpected quote currency {security.QuoteCurrency.Symbol} for Hong Kong futures exchange");
+                    throw new ArgumentException(Messages.InteractiveBrokersFeeModel.HongKongFutureFeesUnexpectedQuoteCurrency(security));
             }
 
             // let's add a 50% extra charge for exchange fees
             return new CashAmount(ibFeePerContract * 1.5m, security.QuoteCurrency.Symbol);
+        }
+
+        private static CashAmount EUREXFutureFees(Security security)
+        {
+            IDictionary<string, decimal> fees, exchangeFees;
+            decimal ibFeePerContract, exchangeFeePerContract;
+            string symbol;
+
+            switch (security.Symbol.SecurityType)
+            {
+                case SecurityType.Future:
+                    fees = _eurexFuturesFees;
+                    exchangeFees = _eurexFuturesExchangeFees;
+                    symbol = security.Symbol.ID.Symbol;
+                    break;
+                default:
+                    throw new ArgumentException(Messages.InteractiveBrokersFeeModel.EUREXFutureFeesUnsupportedSecurityType(security));
+            }
+
+            if (!fees.TryGetValue(symbol, out ibFeePerContract))
+            {
+                ibFeePerContract = 1.00m;
+            }
+
+            if (!exchangeFees.TryGetValue(symbol, out exchangeFeePerContract))
+            {
+                exchangeFeePerContract = 0.00m;
+            }
+
+            // Add exchange fees + IBKR regulatory fee (0.02)
+            return new CashAmount(ibFeePerContract + exchangeFeePerContract + 0.02m, Currencies.EUR);
         }
 
         /// <summary>
@@ -323,12 +418,21 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.25m }, { "M2K", 0.25m }, { "MES", 0.25m }, { "MNQ", 0.25m }, { "2YY", 0.25m }, { "5YY", 0.25m }, { "10Y", 0.25m },
             { "30Y", 0.25m }, { "MCL", 0.25m }, { "MGC", 0.25m }, { "SIL", 0.25m },
             // Cryptocurrency Futures
-            { "BTC", 5m }, { "MIB", 2.25m }, { "MBT", 2.25m }, { "MET", 0.20m }, { "MRB", 0.20m },
+            { "BTC", 5m }, { "MBT", 2.25m }, { "ETH", 3m }, { "MET", 0.20m },
             // E-mini FX (currencies) Futures
             { "E7", 0.50m }, { "J7", 0.50m },
             // Micro E-mini FX (currencies) Futures
             { "M6E", 0.15m }, { "M6A", 0.15m }, { "M6B", 0.15m }, { "MCD", 0.15m }, { "MJY", 0.15m }, { "MSF", 0.15m }, { "M6J", 0.15m },
             { "MIR", 0.15m }, { "M6C", 0.15m }, { "M6S", 0.15m }, { "MNH", 0.15m },
+        };
+
+        /// <summary>
+        /// Reference at https://www.interactivebrokers.com/en/pricing/commissions-futures-europe.php?re=europe
+        /// </summary>
+        private static readonly Dictionary<string, decimal> _eurexFuturesFees = new()
+        {
+            // Futures
+            { "FESX", 1.00m },
         };
 
         private static readonly Dictionary<string, decimal> _usaFutureOptionsFees = new()
@@ -337,7 +441,7 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.25m }, { "M2K", 0.25m }, { "MES", 0.25m }, { "MNQ", 0.25m }, { "2YY", 0.25m }, { "5YY", 0.25m }, { "10Y", 0.25m },
             { "30Y", 0.25m }, { "MCL", 0.25m }, { "MGC", 0.25m }, { "SIL", 0.25m },
             // Cryptocurrency Future Options
-            { "BTC", 5m }, { "MIB", 1.25m }, { "MBT", 1.25m }, { "MET", 0.10m }, { "MRB", 0.10m },
+            { "BTC", 5m }, { "MBT", 1.25m }, { "ETH", 3m }, { "MET", 0.10m },
         };
 
         private static readonly Dictionary<string, decimal> _usaFuturesExchangeFees = new()
@@ -348,12 +452,18 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.30m }, { "M2K", 0.30m }, { "MES", 0.30m }, { "MNQ", 0.30m }, { "2YY", 0.30m }, { "5YY", 0.30m }, { "10Y", 0.30m },
             { "30Y", 0.30m }, { "MCL", 0.30m }, { "MGC", 0.30m }, { "SIL", 0.30m },
             // Cryptocurrency Futures
-            { "BTC", 6m }, { "MIB", 2.5m }, { "MBT", 2.5m }, { "MET", 0.20m }, { "MRB", 0.20m },
+            { "BTC", 6m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m },
             // E-mini FX (currencies) Futures
             { "E7", 0.85m }, { "J7", 0.85m },
             // Micro E-mini FX (currencies) Futures
             { "M6E", 0.24m }, { "M6A", 0.24m }, { "M6B", 0.24m }, { "MCD", 0.24m }, { "MJY", 0.24m }, { "MSF", 0.24m }, { "M6J", 0.24m },
             { "MIR", 0.24m }, { "M6C", 0.24m }, { "M6S", 0.24m }, { "MNH", 0.24m },
+        };
+
+        private static readonly Dictionary<string, decimal> _eurexFuturesExchangeFees = new()
+        {
+            // Futures
+            { "FESX", 0.00m },
         };
 
         private static readonly Dictionary<string, decimal> _usaFutureOptionsExchangeFees = new()
@@ -364,7 +474,7 @@ namespace QuantConnect.Orders.Fees
             { "MYM", 0.20m }, { "M2K", 0.20m }, { "MES", 0.20m }, { "MNQ", 0.20m }, { "2YY", 0.20m }, { "5YY", 0.20m }, { "10Y", 0.20m },
             { "30Y", 0.20m }, { "MCL", 0.20m }, { "MGC", 0.20m }, { "SIL", 0.20m },
             // Cryptocurrency Future Options
-            { "BTC", 5m }, { "MIB", 2.5m }, { "MBT", 2.5m }, { "MET", 0.20m }, { "MRB", 0.20m },
+            { "BTC", 5m }, { "MBT", 2.5m }, { "ETH", 4m }, { "MET", 0.20m },
         };
 
         /// <summary>

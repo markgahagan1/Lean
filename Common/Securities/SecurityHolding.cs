@@ -14,10 +14,9 @@
 */
 
 using System;
-using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
-using static QuantConnect.StringExtensions;
+using QuantConnect.Algorithm.Framework.Portfolio;
 
 namespace QuantConnect.Securities
 {
@@ -32,6 +31,7 @@ namespace QuantConnect.Securities
         public event EventHandler<SecurityHoldingQuantityChangedEventArgs> QuantityChanged;
 
         //Working Variables
+        private bool _invested;
         private decimal _averagePrice;
         private decimal _quantity;
         private decimal _price;
@@ -39,6 +39,7 @@ namespace QuantConnect.Securities
         private decimal _profit;
         private decimal _lastTradeProfit;
         private decimal _totalFees;
+        private decimal _totalDividends;
         private readonly Security _security;
         private readonly ICurrencyConverter _currencyConverter;
 
@@ -64,7 +65,7 @@ namespace QuantConnect.Securities
         {
             _security = holding._security;
             _averagePrice = holding._averagePrice;
-            _quantity = holding._quantity;
+            Quantity = holding._quantity;
             _price = holding._price;
             _totalSaleVolume = holding._totalSaleVolume;
             _profit = holding._profit;
@@ -120,6 +121,9 @@ namespace QuantConnect.Securities
             }
             protected set
             {
+                // avoid any small values, due to differences in lot size, to return invested true but lean not allowing us to trade sice it will be rounded down to 0
+                // specially useful to crypto assets which take fees from the base or quote currency
+                _invested = Math.Abs(value) >= _security.SymbolProperties.LotSize;
                 _quantity = value;
             }
         }
@@ -168,7 +172,7 @@ namespace QuantConnect.Securities
                 {
                     return 0;
                 }
-                return AveragePrice * Quantity * _security.QuoteCurrency.ConversionRate * _security.SymbolProperties.ContractMultiplier;
+                return GetQuantityValue(Quantity, AveragePrice).InAccountCurrency;
             }
         }
 
@@ -230,7 +234,7 @@ namespace QuantConnect.Securities
                     return 0;
                 }
 
-                return GetQuantityValue(Quantity);
+                return GetQuantityValue(Quantity).InAccountCurrency;
             }
         }
 
@@ -244,28 +248,16 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Boolean flat indicating if we hold any of the security
+        /// Boolean flag indicating if we hold any of the security
         /// </summary>
-        public virtual bool HoldStock
-        {
-            get
-            {
-                return (AbsoluteQuantity > 0);
-            }
-        }
+        public virtual bool HoldStock => _invested;
 
         /// <summary>
-        /// Boolean flat indicating if we hold any of the security
+        /// Boolean flag indicating if we hold any of the security
         /// </summary>
         /// <remarks>Alias of HoldStock</remarks>
         /// <seealso cref="HoldStock"/>
-        public virtual bool Invested
-        {
-            get
-            {
-                return HoldStock;
-            }
-        }
+        public virtual bool Invested => _invested;
 
         /// <summary>
         /// The total transaction volume for this security since the algorithm started in units of the account's currency.
@@ -281,6 +273,14 @@ namespace QuantConnect.Securities
         public virtual decimal TotalFees
         {
             get { return _totalFees; }
+        }
+
+        /// <summary>
+        /// Total dividends for this company since the algorithm started in units of the account's currency.
+        /// </summary>
+        public virtual decimal TotalDividends
+        {
+            get { return _totalDividends; }
         }
 
         /// <summary>
@@ -336,7 +336,7 @@ namespace QuantConnect.Securities
         /// <seealso cref="NetProfit"/>
         public virtual decimal Profit
         {
-            get { return _profit; }
+            get { return _profit + _totalDividends; }
         }
 
         /// <summary>
@@ -353,7 +353,7 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Gets the unrealized profit as a percenage of holdings cost
+        /// Gets the unrealized profit as a percentage of holdings cost
         /// </summary>
         public virtual decimal UnrealizedProfitPercent
         {
@@ -400,6 +400,15 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Adds a new dividend payment to the running total dividend in units of the account's currency.
+        /// </summary>
+        /// <param name="dividend"></param>
+        public void AddNewDividend(decimal dividend)
+        {
+            _totalDividends += dividend;
+        }
+
+        /// <summary>
         /// Set the last trade profit for this security from a Portfolio.ProcessFill call in units of the account's currency.
         /// </summary>
         /// <param name="lastTradeProfit">Value of the last trade profit</param>
@@ -424,7 +433,7 @@ namespace QuantConnect.Securities
             var previousQuantity = _quantity;
             var previousAveragePrice = _averagePrice;
 
-            _quantity = quantity;
+            Quantity = quantity;
             _averagePrice = averagePrice;
 
             OnQuantityChanged(previousAveragePrice, previousQuantity);
@@ -445,7 +454,7 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="quantity">The quantity of shares</param>
         /// <returns>The value of the quantity of shares in the account currency</returns>
-        public virtual decimal GetQuantityValue(decimal quantity)
+        public virtual ConvertibleCashAmount GetQuantityValue(decimal quantity)
         {
             return GetQuantityValue(quantity, _price);
         }
@@ -457,29 +466,32 @@ namespace QuantConnect.Securities
         /// <param name="quantity">The quantity of shares</param>
         /// <param name="price">The current price</param>
         /// <returns>The value of the quantity of shares in the account currency</returns>
-        public virtual decimal GetQuantityValue(decimal quantity, decimal price)
+        public virtual ConvertibleCashAmount GetQuantityValue(decimal quantity, decimal price)
         {
-            return price * quantity * _security.QuoteCurrency.ConversionRate * _security.SymbolProperties.ContractMultiplier;
+            var amount = price * quantity * _security.SymbolProperties.ContractMultiplier;
+            return new ConvertibleCashAmount(amount, _security.QuoteCurrency);
         }
 
         /// <summary>
         /// Profit if we closed the holdings right now including the approximate fees in units of the account's currency.
         /// </summary>
         /// <remarks>Does not use the transaction model for market fills but should.</remarks>
-        public virtual decimal TotalCloseProfit()
+        public virtual decimal TotalCloseProfit(bool includeFees = true, decimal? exitPrice = null, decimal? entryPrice = null, decimal? quantity = null)
         {
-            if (Quantity == 0)
+            var quantityToUse = quantity ?? Quantity;
+            if (quantityToUse == 0)
             {
                 return 0;
             }
 
             // this is in the account currency
-            var marketOrder = new MarketOrder(_security.Symbol, -Quantity, _security.LocalTime.ConvertToUtc(_security.Exchange.TimeZone));
+            var orderFee = Extensions.GetMarketOrderFees(_security, -quantityToUse, _security.LocalTime.ConvertToUtc(_security.Exchange.TimeZone), out var marketOrder);
 
-            var orderFee = _security.FeeModel.GetOrderFee(
-                new OrderFeeParameters(_security, marketOrder)).Value;
-            var feesInAccountCurrency = _currencyConverter.
-                ConvertToAccountCurrency(orderFee).Amount;
+            var feesInAccountCurrency = 0m;
+            if (includeFees)
+            {
+                feesInAccountCurrency = _currencyConverter.ConvertToAccountCurrency(orderFee).Amount;
+            }
 
             var price = marketOrder.Direction == OrderDirection.Sell ? _security.BidPrice : _security.AskPrice;
             if (price == 0)
@@ -489,8 +501,9 @@ namespace QuantConnect.Securities
                 price = _security.Price;
             }
 
-            return (price - AveragePrice) * Quantity * _security.QuoteCurrency.ConversionRate
-                * _security.SymbolProperties.ContractMultiplier - feesInAccountCurrency;
+            var entryValue = GetQuantityValue(quantityToUse, entryPrice ?? AveragePrice).InAccountCurrency;
+            var potentialExitValue = GetQuantityValue(quantityToUse, exitPrice ?? price).InAccountCurrency;
+            return potentialExitValue - entryValue - feesInAccountCurrency;
         }
 
         /// <summary>
@@ -498,7 +511,7 @@ namespace QuantConnect.Securities
         /// </summary>
         public override string ToString()
         {
-            return Invariant($"{Symbol.Value}: {Quantity} @ {AveragePrice}");
+            return Messages.SecurityHolding.ToString(this);
         }
 
         /// <summary>

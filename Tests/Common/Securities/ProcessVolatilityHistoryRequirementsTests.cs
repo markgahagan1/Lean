@@ -37,11 +37,11 @@ namespace QuantConnect.Tests.Common.Securities
         {
             var algorithm = new AlgorithmStub();
             algorithm.HistoryProvider = new TestHistoryProvider();
-            var security = algorithm.AddEquity(Symbols.SPY);
+            var security = algorithm.AddEquity(Symbols.SPY.Value);
             var model = new TestVolatilityModel();
             security.VolatilityModel = model;
 
-            AlgorithmManager.ProcessVolatilityHistoryRequirements(algorithm);
+            AlgorithmManager.ProcessVolatilityHistoryRequirements(algorithm, false);
 
             Assert.AreEqual(1, model.dataUpdate.Count);
             Assert.AreEqual(Symbols.SPY, model.dataUpdate.First().Symbol);

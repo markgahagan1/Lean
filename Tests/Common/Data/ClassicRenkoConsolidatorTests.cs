@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
+using Python.Runtime;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
@@ -28,7 +29,7 @@ namespace QuantConnect.Tests.Common.Data
         [Test]
         public void ClassicOutputTypeIsRenkoBar()
         {
-            var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
+            using var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
             Assert.AreEqual(typeof(RenkoBar), consolidator.OutputType);
         }
 
@@ -36,7 +37,7 @@ namespace QuantConnect.Tests.Common.Data
         public void ClassicConsolidatesOnBrickHigh()
         {
             RenkoBar bar = null;
-            var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
+            using var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
             consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 bar = consolidated;
@@ -61,7 +62,7 @@ namespace QuantConnect.Tests.Common.Data
         public void ClassicConsolidatesOnBrickLow()
         {
             RenkoBar bar = null;
-            var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
+            using var consolidator = new ClassicRenkoConsolidator(10, x => x.Value, x => 0);
             consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 bar = consolidated;
@@ -157,7 +158,7 @@ namespace QuantConnect.Tests.Common.Data
         {
             RenkoBar bar = null;
             int rcount = 0;
-            var consolidator = new ClassicRenkoConsolidator(1m, x => x.Value, x => 0);
+            using var consolidator = new ClassicRenkoConsolidator(1m, x => x.Value, x => 0);
             consolidator.DataConsolidated += (sender, consolidated) =>
             {
                 rcount++;
@@ -248,6 +249,35 @@ namespace QuantConnect.Tests.Common.Data
             Assert.AreEqual(reference.AddSeconds(10), bar.EndTime);
 
             // ReSharper restore HeuristicUnreachableCode
+        }
+
+        [TestCase(Language.CSharp)]
+        [TestCase(Language.Python)]
+        public void SelectorCanBeOptionalWhenVolumeSelectorIsPassed(Language language)
+        {
+            if (language == Language.CSharp)
+            {
+                Assert.DoesNotThrow(() =>
+                {
+                    using var consolidator = new ClassicRenkoConsolidator(10, null, x => x.Value);
+                });
+            }
+            else
+            {
+                using (Py.GIL())
+                {
+                    var testModule = PyModule.FromString("test", @"
+from AlgorithmImports import *
+
+def getConsolidator():
+    return ClassicRenkoConsolidator(10, None, lambda x: x.Value)
+");
+                    Assert.DoesNotThrow(() =>
+                    {
+                        var consolidator = testModule.GetAttr("getConsolidator").Invoke();
+                    });
+                }
+            }
         }
     }
 }

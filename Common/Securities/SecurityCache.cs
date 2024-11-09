@@ -19,16 +19,15 @@ using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using QuantConnect.Data.Fundamental;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Util;
 
 namespace QuantConnect.Securities
 {
     /// <summary>
-    /// Base class caching caching spot for security data and any other temporary properties.
+    /// Base class caching spot for security data and any other temporary properties.
     /// </summary>
-    /// <remarks>
-    /// This class is virtually unused and will soon be made obsolete.
-    /// This comment made in a remark to prevent obsolete errors in all users algorithms
-    /// </remarks>
     public class SecurityCache
     {
         // let's share the empty readonly version, so we don't need null checks
@@ -39,10 +38,12 @@ namespace QuantConnect.Securities
         private DateTime _lastOHLCUpdate;
         private BaseData _lastData;
 
-        private readonly object _locker = new ();
+        private readonly object _locker = new();
         private IReadOnlyList<BaseData> _lastTickQuotes = _empty;
         private IReadOnlyList<BaseData> _lastTickTrades = _empty;
         private Dictionary<Type, IReadOnlyList<BaseData>> _dataByType;
+
+        private Dictionary<string, object> _properties;
 
         /// <summary>
         /// Gets the most recent price submitted to this cache
@@ -100,6 +101,21 @@ namespace QuantConnect.Securities
         public long OpenInterest { get; private set; }
 
         /// <summary>
+        /// Collection of keyed custom properties
+        /// </summary>
+        public Dictionary<string, object> Properties
+        {
+            get
+            {
+                if (_properties == null)
+                {
+                    _properties = new Dictionary<string, object>();
+                }
+                return _properties;
+            }
+        }
+
+        /// <summary>
         /// Add a list of market data points to the local security cache for the current market price.
         /// </summary>
         /// <remarks>Internally uses <see cref="AddData"/> using the last data point of the provided list
@@ -132,7 +148,7 @@ namespace QuantConnect.Securities
 
             var last = data[data.Count - 1];
 
-            AddDataImpl(last, cacheByType: false);
+            ProcessDataPoint(last, cacheByType: false);
         }
 
         /// <summary>
@@ -144,10 +160,15 @@ namespace QuantConnect.Securities
         /// </summary>
         public void AddData(BaseData data)
         {
-            AddDataImpl(data, cacheByType: true);
+            ProcessDataPoint(data, cacheByType: true);
         }
 
-        private void AddDataImpl(BaseData data, bool cacheByType)
+        /// <summary>
+        /// Will consume the given data point updating the cache state and it's properties
+        /// </summary>
+        /// <param name="data">The data point to process</param>
+        /// <param name="cacheByType">True if this data point should be cached by type</param>
+        protected virtual void ProcessDataPoint(BaseData data, bool cacheByType)
         {
             var tick = data as Tick;
             if (tick?.TickType == TickType.OpenInterest)
@@ -160,13 +181,16 @@ namespace QuantConnect.Securities
                 return;
             }
 
-            // Only cache non fill-forward data.
+            // Only cache non fill-forward data and non auxiliary
             if (data.IsFillForward) return;
 
             if (cacheByType)
             {
                 StoreDataPoint(data);
             }
+
+            // we store auxiliary data by type but we don't use it to set 'lastData' nor price information
+            if (data.DataType == MarketDataType.Auxiliary) return;
 
             var isDefaultDataType = SubscriptionManager.IsDefaultDataType(data);
 
@@ -239,7 +263,10 @@ namespace QuantConnect.Securities
             }
             else if (data.DataType != MarketDataType.Auxiliary)
             {
-                Price = data.Price;
+                if (data.DataType != MarketDataType.Base || data.Price != 0)
+                {
+                    Price = data.Price;
+                }
             }
         }
 
@@ -293,7 +320,6 @@ namespace QuantConnect.Securities
             {
                 return default(T);
             }
-
             return list[list.Count - 1] as T;
         }
 
@@ -357,7 +383,17 @@ namespace QuantConnect.Securities
         /// </summary>
         public bool TryGetValue(Type type, out IReadOnlyList<BaseData> data)
         {
-            if (type == typeof(Tick))
+            if (type == typeof(Fundamentals))
+            {
+                // for backwards compatibility
+                type = typeof(FundamentalUniverse);
+            }
+            else if (type == typeof(ETFConstituentData))
+            {
+                // for backwards compatibility
+                type = typeof(ETFConstituentUniverse);
+            }
+            else if (type == typeof(Tick))
             {
                 var quote = _lastTickQuotes.LastOrDefault();
                 var trade = _lastTickTrades.LastOrDefault();
@@ -446,6 +482,29 @@ namespace QuantConnect.Securities
             targetToModify._dataByType = sourceToShare._dataByType;
             targetToModify._lastTickTrades = sourceToShare._lastTickTrades;
             targetToModify._lastTickQuotes = sourceToShare._lastTickQuotes;
+        }
+
+        /// <summary>
+        /// Applies the split to the security cache values
+        /// </summary>
+        internal void ApplySplit(Split split)
+        {
+            Price *= split.SplitFactor;
+            Open *= split.SplitFactor;
+            High *= split.SplitFactor;
+            Low *= split.SplitFactor;
+            Close *= split.SplitFactor;
+            Volume /= split.SplitFactor;
+            BidPrice *= split.SplitFactor;
+            AskPrice *= split.SplitFactor;
+            AskSize /= split.SplitFactor;
+            BidSize /= split.SplitFactor;
+
+            // Adjust values for the last data we have cached
+            Action<BaseData> scale = data => data.Scale((target, factor, _) => target * factor, 1 / split.SplitFactor, split.SplitFactor, decimal.Zero);
+            _dataByType?.Values.DoForEach(x => x.DoForEach(scale));
+            _lastTickQuotes.DoForEach(scale);
+            _lastTickTrades.DoForEach(scale);
         }
     }
 }

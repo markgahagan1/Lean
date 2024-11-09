@@ -23,7 +23,7 @@ using QuantConnect.Securities;
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
-    /// Example of custom volatility model 
+    /// Example of custom volatility model
     /// </summary>
     /// <meta name="tag" content="using quantconnect" />
     /// <meta name="tag" content="indicators" />
@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp
             _equity.SetVolatilityModel(new CustomVolatilityModel(10));
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested && !(_equity.VolatilityModel.Volatility > 0))
                 SetHoldings("SPY", 1);
@@ -56,8 +56,8 @@ namespace QuantConnect.Algorithm.CSharp
         private bool _needsUpdate = false;
         private TimeSpan _periodSpan = TimeSpan.FromDays(1);
         private RollingWindow<decimal> _window;
-        
-        // Volatility is a mandatory fleid
+
+        // Volatility is a mandatory field
         public decimal Volatility { get; set; } = 0m;
         public CustomVolatilityModel(int periods)
         {
@@ -81,7 +81,7 @@ namespace QuantConnect.Algorithm.CSharp
                 _lastPrice = data.Price;
             }
 
-            if (_window.Count() < 2)
+            if (_window.Count < 2)
             {
                 Volatility = 0;
                 return;
@@ -91,15 +91,15 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 _needsUpdate = false;
                 var mean = _window.Average();
-                var std = Math.Sqrt((double)_window.Sum(x => (x - mean)*(x - mean)) / _window.Count()); 
-                Volatility = Convert.ToDecimal(std * Math.Sqrt(252d));
+                var std = Math.Sqrt((double)_window.Sum(x => (x - mean)*(x - mean)) / _window.Count);
+                Volatility = (std * Math.Sqrt(252d)).SafeDecimalCast();
             }
         }
 
         // Returns history requirements for the volatility model expressed in the form of history request
         // GetHistoryRequirements is a mandatory method
         public IEnumerable<HistoryRequest> GetHistoryRequirements(Security security, DateTime utcTime)
-        // For simplicity's sake, we will not set a history requirement 
+        // For simplicity's sake, we will not set a history requirement
         {
             return Enumerable.Empty<HistoryRequest>();
         }

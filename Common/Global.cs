@@ -16,11 +16,9 @@
 using System;
 using Newtonsoft.Json;
 using QuantConnect.Securities;
-using System.Collections.Generic;
 using Newtonsoft.Json.Converters;
 using System.Runtime.Serialization;
 using System.Runtime.CompilerServices;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect
 {
@@ -36,7 +34,7 @@ namespace QuantConnect
         /// Daily and hourly time format
         public const string TwelveCharacter = "yyyyMMdd HH:mm";
         /// JSON Format Date Representation
-        public static string JsonFormat = "yyyy-MM-ddTHH:mm:ss";
+        public static string JsonFormat { get; } = "yyyy-MM-ddTHH:mm:ss";
         /// MySQL Format Date Representation
         public const string DB = "yyyy-MM-dd HH:mm:ss";
         /// QuantConnect UX Date Representation
@@ -66,38 +64,44 @@ namespace QuantConnect
     public class Holding
     {
         /// Symbol of the Holding:
-        public Symbol Symbol = Symbol.Empty;
+        [JsonProperty(PropertyName = "symbol")]
+        public Symbol Symbol { get; set; } = Symbol.Empty;
 
         /// Type of the security
-        [JsonIgnore]
+        [JsonProperty(PropertyName = "type")]
         public SecurityType Type => Symbol.SecurityType;
 
         /// The currency symbol of the holding, such as $
-        public string CurrencySymbol;
+        [JsonProperty(PropertyName = "currencySymbol")]
+        public string CurrencySymbol { get; set; }
 
         /// Average Price of our Holding in the currency the symbol is traded in
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal AveragePrice;
+        [JsonProperty(PropertyName = "averagePrice", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal AveragePrice { get; set; }
 
         /// Quantity of Symbol We Hold.
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal Quantity;
+        [JsonProperty(PropertyName = "quantity", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal Quantity { get; set; }
 
         /// Current Market Price of the Asset in the currency the symbol is traded in
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal MarketPrice;
+        [JsonProperty(PropertyName = "marketPrice", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal MarketPrice { get; set; }
 
         /// Current market conversion rate into the account currency
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal? ConversionRate;
+        [JsonProperty(PropertyName = "conversionRate", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? ConversionRate { get; set; }
 
         /// Current market value of the holding
-        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal MarketValue;
+        [JsonProperty(PropertyName = "marketValue", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal MarketValue { get; set; }
 
         /// Current unrealized P/L of the holding
+        [JsonProperty(PropertyName = "unrealizedPnl", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal UnrealizedPnL { get; set; }
+
+        /// Current unrealized P/L % of the holding
         [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
-        public decimal UnrealizedPnL;
+        public decimal UnrealizedPnLPercent { get; set; }
 
         /// Create a new default holding:
         public Holding()
@@ -125,6 +129,7 @@ namespace QuantConnect
             AveragePrice = Math.Round(holding.AveragePrice, rounding);
             MarketPrice = Math.Round(holding.Price, rounding);
             UnrealizedPnL = Math.Round(holding.UnrealizedProfit, 2);
+            UnrealizedPnLPercent = Math.Round(holding.UnrealizedProfitPercent * 100, 2);
         }
 
         /// <summary>
@@ -141,6 +146,7 @@ namespace QuantConnect
                 MarketPrice = MarketPrice,
                 MarketValue = MarketValue,
                 UnrealizedPnL = UnrealizedPnL,
+                UnrealizedPnLPercent = UnrealizedPnLPercent,
                 ConversionRate = ConversionRate,
                 CurrencySymbol = CurrencySymbol
             };
@@ -151,16 +157,7 @@ namespace QuantConnect
         /// </summary>
         public override string ToString()
         {
-            var value = Invariant($"{Symbol.Value}: {Quantity} @ ") +
-                Invariant($"{CurrencySymbol}{AveragePrice} - ") +
-                Invariant($"Market: {CurrencySymbol}{MarketPrice}");
-
-            if (ConversionRate != 1m)
-            {
-                value += Invariant($" - Conversion: {ConversionRate}");
-            }
-
-            return value;
+            return Messages.Holding.ToString(this);
         }
     }
 
@@ -310,6 +307,11 @@ namespace QuantConnect
         /// For index options traded on American markets, they tend to be European-style options and are Cash-settled.
         /// </remarks>
         IndexOption,
+
+        /// <summary>
+        /// Crypto Future Type (11)
+        /// </summary>
+        CryptoFuture,
     }
 
     /// <summary>
@@ -523,28 +525,28 @@ namespace QuantConnect
             Initialized = false;
             HasSubscribers = true;
             Status = AlgorithmStatus.Running;
-            ChartSubscription = "Strategy Equity";
+            ChartSubscription = Messages.AlgorithmControl.ChartSubscription;
         }
 
         /// <summary>
         /// Register this control packet as not defaults.
         /// </summary>
-        public bool Initialized;
+        public bool Initialized { get; set; }
 
         /// <summary>
         /// Current run status of the algorithm id.
         /// </summary>
-        public AlgorithmStatus Status;
+        public AlgorithmStatus Status { get; set; }
 
         /// <summary>
         /// Currently requested chart.
         /// </summary>
-        public string ChartSubscription;
+        public string ChartSubscription { get; set; }
 
         /// <summary>
         /// True if there's subscribers on the channel
         /// </summary>
-        public bool HasSubscribers;
+        public bool HasSubscribers { get; set; }
     }
 
     /// <summary>
@@ -601,7 +603,12 @@ namespace QuantConnect
         /// <summary>
         /// The subscription's data is streamed (3)
         /// </summary>
-        Streaming
+        Streaming,
+
+        /// <summary>
+        /// The subscription's data comes from the object store (4)
+        /// </summary>
+        ObjectStore
     }
 
     /// <summary>
@@ -695,7 +702,11 @@ namespace QuantConnect
         /// Eliminates price jumps between two consecutive contracts, multiplying the prices by their ratio. The last contract has the true price. Factor 1. (6)
         /// </summary>
         /// <remarks>Last contract is the true one, factor 1</remarks>
-        BackwardsRatio
+        BackwardsRatio,
+        /// <summary>
+        /// Splits and dividends are adjusted into the prices in a given date. Only for history requests. (7)
+        /// </summary>
+        ScaledRaw,
     }
 
     /// <summary>
@@ -722,6 +733,25 @@ namespace QuantConnect
         /// The contract maps when any of the back month contracts of the next year have a higher volume that the current front month (3)
         /// </summary>
         OpenInterestAnnual,
+    }
+
+    /// <summary>
+    /// The different types of <see cref="CashBook.Updated"/> events
+    /// </summary>
+    public enum CashBookUpdateType
+    {
+        /// <summary>
+        /// A new <see cref="Cash.Symbol"/> was added (0)
+        /// </summary>
+        Added,
+        /// <summary>
+        /// One or more <see cref="Cash"/> instances were removed (1)
+        /// </summary>
+        Removed,
+        /// <summary>
+        /// An existing <see cref="Cash.Symbol"/> was updated (2)
+        /// </summary>
+        Updated
     }
 
     /// <summary>
@@ -821,11 +851,31 @@ namespace QuantConnect
                     case "Y":
                     case "BATS Y":
                     case "BATS_Y":
+                    case "BYX":
                         return Exchange.BATS_Y;
+                    case "BB":
                     case "BOSTON":
                         return Exchange.BOSTON;
                     case "BSE":
                         return Exchange.BSE;
+                    case "IEX":
+                        return Exchange.IEX;
+                    case "SMART":
+                        return Exchange.SMART;
+                    case "OTCX":
+                        return Exchange.OTCX;
+                    case "MP":
+                    case "MIAX PEARL":
+                    case "MIAX_PEARL":
+                        return Exchange.MIAX_PEARL;
+                    case "L":
+                    case "LTSE":
+                        return Exchange.LTSE;
+                    case "MM":
+                    case "MEMX":
+                        return Exchange.MEMX;
+                    case "CSFB":
+                        return Exchange.CSFB;
                 }
             }
             else if (securityType == SecurityType.Option)
@@ -835,8 +885,17 @@ namespace QuantConnect
                     case "A":
                     case "AMEX":
                         return Exchange.AMEX_Options;
+                    case "M":
                     case "MIAX":
                         return Exchange.MIAX;
+                    case "ME":
+                    case "MIAX EMERALD":
+                    case "MIAX_EMERALD":
+                        return Exchange.MIAX_EMERALD;
+                    case "MP":
+                    case "MIAX PEARL":
+                    case "MIAX_PEARL":
+                        return Exchange.MIAX_PEARL;
                     case "I":
                     case "ISE":
                         return Exchange.ISE;
@@ -854,6 +913,21 @@ namespace QuantConnect
                     case "W":
                     case "C2":
                         return Exchange.C2;
+                    case "XNDQ":
+                        return Exchange.NASDAQ_Options;
+                    case "ARCX":
+                        return Exchange.ARCA_Options;
+                    case "EDGO":
+                        return Exchange.EDGO;
+                    case "BOX":
+                    case "B":
+                        return Exchange.BOX;
+                    case "PHLX":
+                        return Exchange.PHLX;
+                    case "SPHR":
+                    case "MIAX SAPPHIRE":
+                    case "MIAX_SAPPHIRE":
+                        return Exchange.MIAX_SAPPHIRE;
                     default:
                         return Exchange.UNKNOWN;
                 }
@@ -874,6 +948,10 @@ namespace QuantConnect
                         return Exchange.CFE;
                     case "COMEX":
                         return Exchange.COMEX;
+                    case "NYSELIFFE":
+                        return Exchange.NYSELIFFE;
+                    case "EUREX":
+                        return Exchange.EUREX;
                     default:
                         return Exchange.UNKNOWN;
                 }
@@ -899,281 +977,51 @@ namespace QuantConnect
     }
 
     /// <summary>
-    /// US Public Holidays - Not Tradeable:
+    /// Represents the types deployment targets for algorithms
     /// </summary>
-    public static class USHoliday
+    [JsonConverter(typeof(StringEnumConverter))]
+    public enum DeploymentTarget
     {
         /// <summary>
-        /// Public Holidays
+        /// Cloud Platform (0)
         /// </summary>
-        public static readonly HashSet<DateTime> Dates = new HashSet<DateTime>
-        {
-            /* New Years Day*/
-            new DateTime(1998, 01, 01),
-            new DateTime(1999, 01, 01),
-            new DateTime(2001, 01, 01),
-            new DateTime(2002, 01, 01),
-            new DateTime(2003, 01, 01),
-            new DateTime(2004, 01, 01),
-            new DateTime(2006, 01, 02),
-            new DateTime(2007, 01, 01),
-            new DateTime(2008, 01, 01),
-            new DateTime(2009, 01, 01),
-            new DateTime(2010, 01, 01),
-            new DateTime(2011, 01, 01),
-            new DateTime(2012, 01, 02),
-            new DateTime(2013, 01, 01),
-            new DateTime(2014, 01, 01),
-            new DateTime(2015, 01, 01),
-            new DateTime(2016, 01, 01),
-            new DateTime(2017, 01, 02),
-            new DateTime(2018, 01, 01),
-            new DateTime(2019, 01, 01),
-            new DateTime(2020, 01, 01),
-            new DateTime(2021, 01, 01),
-            new DateTime(2022, 01, 01),
-            new DateTime(2023, 01, 02),
+        CloudPlatform,
 
-            /* Day of Mouring */
-            new DateTime(2007, 01, 02),
+        /// <summary>
+        /// Local Platform (1)
+        /// </summary>
+        LocalPlatform,
 
-            /* World Trade Center */
-            new DateTime(2001, 09, 11),
-            new DateTime(2001, 09, 12),
-            new DateTime(2001, 09, 13),
-            new DateTime(2001, 09, 14),
+        /// <summary>
+        /// Private Cloud Platform (2)
+        /// </summary>
+        PrivateCloudPlatform
+    }
 
-            /* Regan Funeral */
-            new DateTime(2004, 06, 11),
+    /// <summary>
+    /// Represents the deployment modes of an algorithm
+    /// </summary>
+    [JsonConverter(typeof(StringEnumConverter))]
+    public enum AlgorithmMode
+    {
+        /// <summary>
+        /// Live (0)
+        /// </summary>
+        Live,
 
-            /* Hurricane Sandy */
-            new DateTime(2012, 10, 29),
-            new DateTime(2012, 10, 30),
+        /// <summary>
+        /// Optimization (1)
+        /// </summary>
+        Optimization,
 
-            /* Martin Luther King Jnr Day*/
-            new DateTime(1998, 01, 19),
-            new DateTime(1999, 01, 18),
-            new DateTime(2000, 01, 17),
-            new DateTime(2001, 01, 15),
-            new DateTime(2002, 01, 21),
-            new DateTime(2003, 01, 20),
-            new DateTime(2004, 01, 19),
-            new DateTime(2005, 01, 17),
-            new DateTime(2006, 01, 16),
-            new DateTime(2007, 01, 15),
-            new DateTime(2008, 01, 21),
-            new DateTime(2009, 01, 19),
-            new DateTime(2010, 01, 18),
-            new DateTime(2011, 01, 17),
-            new DateTime(2012, 01, 16),
-            new DateTime(2013, 01, 21),
-            new DateTime(2014, 01, 20),
-            new DateTime(2015, 01, 19),
-            new DateTime(2016, 01, 18),
-            new DateTime(2017, 01, 16),
-            new DateTime(2018, 01, 15),
-            new DateTime(2019, 01, 21),
-            new DateTime(2020, 01, 20),
-            new DateTime(2021, 01, 18),
-            new DateTime(2022, 01, 17),
-            new DateTime(2023, 01, 16),
+        /// <summary>
+        /// Backtesting (2)
+        /// </summary>
+        Backtesting,
 
-            /* Washington / Presidents Day */
-            new DateTime(1998, 02, 16),
-            new DateTime(1999, 02, 15),
-            new DateTime(2000, 02, 21),
-            new DateTime(2001, 02, 19),
-            new DateTime(2002, 02, 18),
-            new DateTime(2003, 02, 17),
-            new DateTime(2004, 02, 16),
-            new DateTime(2005, 02, 21),
-            new DateTime(2006, 02, 20),
-            new DateTime(2007, 02, 19),
-            new DateTime(2008, 02, 18),
-            new DateTime(2009, 02, 16),
-            new DateTime(2010, 02, 15),
-            new DateTime(2011, 02, 21),
-            new DateTime(2012, 02, 20),
-            new DateTime(2013, 02, 18),
-            new DateTime(2014, 02, 17),
-            new DateTime(2015, 02, 16),
-            new DateTime(2016, 02, 15),
-            new DateTime(2017, 02, 20),
-            new DateTime(2018, 02, 19),
-            new DateTime(2019, 02, 18),
-            new DateTime(2020, 02, 17),
-            new DateTime(2021, 02, 15),
-            new DateTime(2022, 02, 21),
-            new DateTime(2023, 02, 20),
-
-            /* Good Friday */
-            new DateTime(1998, 04, 10),
-            new DateTime(1999, 04, 02),
-            new DateTime(2000, 04, 21),
-            new DateTime(2001, 04, 13),
-            new DateTime(2002, 03, 29),
-            new DateTime(2003, 04, 18),
-            new DateTime(2004, 04, 09),
-            new DateTime(2005, 03, 25),
-            new DateTime(2006, 04, 14),
-            new DateTime(2007, 04, 06),
-            new DateTime(2008, 03, 21),
-            new DateTime(2009, 04, 10),
-            new DateTime(2010, 04, 02),
-            new DateTime(2011, 04, 22),
-            new DateTime(2012, 04, 06),
-            new DateTime(2013, 03, 29),
-            new DateTime(2014, 04, 18),
-            new DateTime(2015, 04, 03),
-            new DateTime(2016, 03, 25),
-            new DateTime(2017, 04, 14),
-            new DateTime(2018, 03, 30),
-            new DateTime(2019, 04, 19),
-            new DateTime(2020, 04, 10),
-            new DateTime(2021, 04, 02),
-            new DateTime(2022, 04, 15),
-            new DateTime(2023, 04, 07),
-
-            /* Memorial Day */
-            new DateTime(1998, 05, 25),
-            new DateTime(1999, 05, 31),
-            new DateTime(2000, 05, 29),
-            new DateTime(2001, 05, 28),
-            new DateTime(2002, 05, 27),
-            new DateTime(2003, 05, 26),
-            new DateTime(2004, 05, 31),
-            new DateTime(2005, 05, 30),
-            new DateTime(2006, 05, 29),
-            new DateTime(2007, 05, 28),
-            new DateTime(2008, 05, 26),
-            new DateTime(2009, 05, 25),
-            new DateTime(2010, 05, 31),
-            new DateTime(2011, 05, 30),
-            new DateTime(2012, 05, 28),
-            new DateTime(2013, 05, 27),
-            new DateTime(2014, 05, 26),
-            new DateTime(2015, 05, 25),
-            new DateTime(2016, 05, 30),
-            new DateTime(2017, 05, 29),
-            new DateTime(2018, 05, 28),
-            new DateTime(2019, 05, 27),
-            new DateTime(2020, 05, 25),
-            new DateTime(2021, 05, 31),
-            new DateTime(2022, 05, 30),
-            new DateTime(2023, 05, 29),
-
-            /* Independence Day */
-            new DateTime(1998, 07, 03),
-            new DateTime(1999, 07, 05),
-            new DateTime(2000, 07, 04),
-            new DateTime(2001, 07, 04),
-            new DateTime(2002, 07, 04),
-            new DateTime(2003, 07, 04),
-            new DateTime(2004, 07, 05),
-            new DateTime(2005, 07, 04),
-            new DateTime(2006, 07, 04),
-            new DateTime(2007, 07, 04),
-            new DateTime(2008, 07, 04),
-            new DateTime(2009, 07, 03),
-            new DateTime(2010, 07, 05),
-            new DateTime(2011, 07, 04),
-            new DateTime(2012, 07, 04),
-            new DateTime(2013, 07, 04),
-            new DateTime(2014, 07, 04),
-            new DateTime(2014, 07, 04),
-            new DateTime(2015, 07, 03),
-            new DateTime(2016, 07, 04),
-            new DateTime(2017, 07, 04),
-            new DateTime(2018, 07, 04),
-            new DateTime(2019, 07, 04),
-            new DateTime(2020, 07, 04),
-            new DateTime(2021, 07, 05),
-            new DateTime(2022, 07, 04),
-            new DateTime(2023, 07, 04),
-
-            /* Labor Day */
-            new DateTime(1998, 09, 07),
-            new DateTime(1999, 09, 06),
-            new DateTime(2000, 09, 04),
-            new DateTime(2001, 09, 03),
-            new DateTime(2002, 09, 02),
-            new DateTime(2003, 09, 01),
-            new DateTime(2004, 09, 06),
-            new DateTime(2005, 09, 05),
-            new DateTime(2006, 09, 04),
-            new DateTime(2007, 09, 03),
-            new DateTime(2008, 09, 01),
-            new DateTime(2009, 09, 07),
-            new DateTime(2010, 09, 06),
-            new DateTime(2011, 09, 05),
-            new DateTime(2012, 09, 03),
-            new DateTime(2013, 09, 02),
-            new DateTime(2014, 09, 01),
-            new DateTime(2015, 09, 07),
-            new DateTime(2016, 09, 05),
-            new DateTime(2017, 09, 04),
-            new DateTime(2018, 09, 03),
-            new DateTime(2019, 09, 02),
-            new DateTime(2020, 09, 07),
-            new DateTime(2021, 09, 06),
-            new DateTime(2022, 09, 05),
-            new DateTime(2023, 09, 04),
-
-            /* Thanksgiving Day */
-            new DateTime(1998, 11, 26),
-            new DateTime(1999, 11, 25),
-            new DateTime(2000, 11, 23),
-            new DateTime(2001, 11, 22),
-            new DateTime(2002, 11, 28),
-            new DateTime(2003, 11, 27),
-            new DateTime(2004, 11, 25),
-            new DateTime(2005, 11, 24),
-            new DateTime(2006, 11, 23),
-            new DateTime(2007, 11, 22),
-            new DateTime(2008, 11, 27),
-            new DateTime(2009, 11, 26),
-            new DateTime(2010, 11, 25),
-            new DateTime(2011, 11, 24),
-            new DateTime(2012, 11, 22),
-            new DateTime(2013, 11, 28),
-            new DateTime(2014, 11, 27),
-            new DateTime(2015, 11, 26),
-            new DateTime(2016, 11, 24),
-            new DateTime(2017, 11, 23),
-            new DateTime(2018, 11, 22),
-            new DateTime(2019, 11, 28),
-            new DateTime(2020, 11, 26),
-            new DateTime(2021, 11, 25),
-            new DateTime(2022, 11, 24),
-            new DateTime(2023, 11, 23),
-
-            /* Christmas */
-            new DateTime(1998, 12, 25),
-            new DateTime(1999, 12, 24),
-            new DateTime(2000, 12, 25),
-            new DateTime(2001, 12, 25),
-            new DateTime(2002, 12, 25),
-            new DateTime(2003, 12, 25),
-            new DateTime(2004, 12, 24),
-            new DateTime(2005, 12, 26),
-            new DateTime(2006, 12, 25),
-            new DateTime(2007, 12, 25),
-            new DateTime(2008, 12, 25),
-            new DateTime(2009, 12, 25),
-            new DateTime(2010, 12, 24),
-            new DateTime(2011, 12, 26),
-            new DateTime(2012, 12, 25),
-            new DateTime(2013, 12, 25),
-            new DateTime(2014, 12, 25),
-            new DateTime(2015, 12, 25),
-            new DateTime(2016, 12, 26),
-            new DateTime(2017, 12, 25),
-            new DateTime(2018, 12, 25),
-            new DateTime(2019, 12, 25),
-            new DateTime(2020, 12, 25),
-            new DateTime(2021, 12, 24),
-            new DateTime(2022, 12, 26),
-            new DateTime(2023, 12, 25)
-        };
+        /// <summary>
+        /// Research (3)
+        /// </summary>
+        Research
     }
 }

@@ -60,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         /// <param name="constituents">ETF constituents, i.e. the components of the ETF and their weighting</param>
         /// <returns>Symbols to add to universe</returns>
-        public IEnumerable<Symbol> FilterETFConstituents(IEnumerable<ETFConstituentData> constituents)
+        public IEnumerable<Symbol> FilterETFConstituents(IEnumerable<ETFConstituentUniverse> constituents)
         {
             return constituents
                 .Where(x => x.Weight != null && x.Weight >= 0.001m)
@@ -85,8 +85,8 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 // Cast first, and then access the constituents collection defined in our algorithm.
                 var algoConstituents = data.Bars.Keys
-                    .Where(x => algorithm.Securities[x].Cache.HasData(typeof(ETFConstituentData)))
-                    .Select(x => algorithm.Securities[x].Cache.GetData<ETFConstituentData>())
+                    .Where(x => algorithm.Securities[x].Cache.HasData(typeof(ETFConstituentUniverse)))
+                    .Select(x => algorithm.Securities[x].Cache.GetData<ETFConstituentUniverse>())
                     .ToList();
                 
                 if (algoConstituents.Count == 0 || data.Bars.Count == 0)
@@ -167,7 +167,7 @@ namespace QuantConnect.Algorithm.CSharp
             /// <summary>
             /// Symbol's constituent data for the ETF it belongs to
             /// </summary>
-            public ETFConstituentData Constituent { get; }
+            public ETFConstituentUniverse Constituent { get; }
             
             /// <summary>
             /// RSI indicator for the Symbol's price data
@@ -180,7 +180,7 @@ namespace QuantConnect.Algorithm.CSharp
             /// <param name="symbol">The symbol to add data for</param>
             /// <param name="constituent">ETF constituent data</param>
             /// <param name="period">RSI period</param>
-            public SymbolData(Symbol symbol, QCAlgorithm algorithm, ETFConstituentData constituent, int period)
+            public SymbolData(Symbol symbol, QCAlgorithm algorithm, ETFConstituentUniverse constituent, int period)
             {
                 Symbol = symbol;
                 Constituent = constituent;
@@ -196,12 +196,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 2191;
+        public long DataPoints => 2722;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -209,52 +209,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "52"},
+            {"Total Orders", "55"},
             {"Average Win", "0.09%"},
             {"Average Loss", "-0.05%"},
-            {"Compounding Annual Return", "3.919%"},
+            {"Compounding Annual Return", "3.321%"},
             {"Drawdown", "0.500%"},
-            {"Expectancy", "0.080"},
-            {"Net Profit", "0.630%"},
-            {"Sharpe Ratio", "1.799"},
-            {"Probabilistic Sharpe Ratio", "64.704%"},
-            {"Loss Rate", "61%"},
-            {"Win Rate", "39%"},
-            {"Profit-Loss Ratio", "1.75"},
-            {"Alpha", "0.029"},
+            {"Expectancy", "0.047"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100535.45"},
+            {"Net Profit", "0.535%"},
+            {"Sharpe Ratio", "1.377"},
+            {"Sortino Ratio", "1.963"},
+            {"Probabilistic Sharpe Ratio", "60.081%"},
+            {"Loss Rate", "63%"},
+            {"Win Rate", "37%"},
+            {"Profit-Loss Ratio", "1.83"},
+            {"Alpha", "0.022"},
             {"Beta", "-0.024"},
             {"Annual Standard Deviation", "0.015"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-0.421"},
+            {"Information Ratio", "-0.46"},
             {"Tracking Error", "0.109"},
-            {"Treynor Ratio", "-1.147"},
-            {"Total Fees", "$52.00"},
-            {"Estimated Strategy Capacity", "$430000000.00"},
+            {"Treynor Ratio", "-0.878"},
+            {"Total Fees", "$55.00"},
+            {"Estimated Strategy Capacity", "$440000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
-            {"Fitness Score", "0.144"},
-            {"Kelly Criterion Estimate", "-2.61"},
-            {"Kelly Criterion Probability Value", "0.987"},
-            {"Sortino Ratio", "2.877"},
-            {"Return Over Maximum Drawdown", "6.437"},
-            {"Portfolio Turnover", "0.162"},
-            {"Total Insights Generated", "1076"},
-            {"Total Insights Closed", "1048"},
-            {"Total Insights Analysis Completed", "1048"},
-            {"Long Insight Count", "530"},
-            {"Short Insight Count", "546"},
-            {"Long/Short Ratio", "97.07%"},
-            {"Estimated Monthly Alpha Value", "$-378965.1"},
-            {"Total Accumulated Estimated Alpha Value", "$-756351.1"},
-            {"Mean Population Estimated Insight Value", "$-721.7091"},
-            {"Mean Population Direction", "45.8015%"},
-            {"Mean Population Magnitude", "45.8015%"},
-            {"Rolling Averaged Population Direction", "45.6662%"},
-            {"Rolling Averaged Population Magnitude", "45.6662%"},
-            {"OrderListHash", "f320b74a7bb7207f3f88f7fce9d0f286"}
+            {"Portfolio Turnover", "11.16%"},
+            {"OrderListHash", "d41a5ba07ca662d7bfbeace8a05b34aa"}
         };
     }
 }

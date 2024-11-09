@@ -53,14 +53,14 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            if (data.Keys.Count != 1)
+            if (slice.Keys.Count != 1)
             {
-                throw new Exception($"We are getting data for more than one symbols! {string.Join(",", data.Keys.Select(symbol => symbol))}");
+                throw new RegressionTestException($"We are getting data for more than one symbols! {string.Join(",", slice.Keys.Select(symbol => symbol))}");
             }
 
-            foreach (var changedEvent in data.SymbolChangedEvents.Values)
+            foreach (var changedEvent in slice.SymbolChangedEvents.Values)
             {
                 if (changedEvent.Symbol == _continuousContract.Symbol)
                 {
@@ -73,8 +73,13 @@ namespace QuantConnect.Algorithm.CSharp
 
                     if (currentExpiration != frontMonthExpiration.Date)
                     {
-                        throw new Exception($"Unexpected current mapped contract expiration {currentExpiration}" +
+                        throw new RegressionTestException($"Unexpected current mapped contract expiration {currentExpiration}" +
                             $" @ {Time} it should be AT front month expiration {frontMonthExpiration}");
+                    }
+
+                    if (_continuousContract.Mapped != changedEvent.Symbol.Underlying)
+                    {
+                        throw new RegressionTestException($"Unexpected mapped continuous contract {_continuousContract.Mapped} expected {changedEvent.Symbol.Underlying}");
                     }
                 }
             }
@@ -98,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var response = History(new[] { _continuousContract.Symbol }, 60 * 24 * 90);
                     if (!response.Any())
                     {
-                        throw new Exception("Unexpected empty history response");
+                        throw new RegressionTestException("Unexpected empty history response");
                     }
                 }
             }
@@ -117,7 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
             var expectedMappingCounts = 2;
             if (_mappings.Count != expectedMappingCounts)
             {
-                throw new Exception($"Unexpected symbol changed events: {_mappings.Count}, was expecting {expectedMappingCounts}");
+                throw new RegressionTestException($"Unexpected symbol changed events: {_mappings.Count}, was expecting {expectedMappingCounts}");
             }
         }
 
@@ -129,12 +134,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 264153;
+        public long DataPoints => 713371;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -142,52 +147,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
-            {"Average Win", "1.50%"},
+            {"Total Orders", "2"},
+            {"Average Win", "1.48%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "2.993%"},
+            {"Compounding Annual Return", "2.968%"},
             {"Drawdown", "1.600%"},
             {"Expectancy", "0"},
-            {"Net Profit", "1.496%"},
-            {"Sharpe Ratio", "0.814"},
-            {"Probabilistic Sharpe Ratio", "42.511%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101483.2"},
+            {"Net Profit", "1.483%"},
+            {"Sharpe Ratio", "0.521"},
+            {"Sortino Ratio", "0.124"},
+            {"Probabilistic Sharpe Ratio", "42.535%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.005"},
-            {"Beta", "0.114"},
+            {"Alpha", "-0.011"},
+            {"Beta", "0.113"},
             {"Annual Standard Deviation", "0.026"},
             {"Annual Variance", "0.001"},
-            {"Information Ratio", "-2.672"},
+            {"Information Ratio", "-2.674"},
             {"Tracking Error", "0.076"},
-            {"Treynor Ratio", "0.184"},
+            {"Treynor Ratio", "0.117"},
             {"Total Fees", "$4.30"},
-            {"Estimated Strategy Capacity", "$2200000000.00"},
-            {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.007"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "0.275"},
-            {"Return Over Maximum Drawdown", "2.603"},
-            {"Portfolio Turnover", "0.01"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "ebeeac4c57ccacef7b458b6160190f5b"}
+            {"Estimated Strategy Capacity", "$76000000.00"},
+            {"Lowest Capacity Asset", "ES VP274HSU1AF5"},
+            {"Portfolio Turnover", "0.91%"},
+            {"OrderListHash", "7e45786e43b159c7edfcdf0aa0876deb"}
         };
     }
 }

@@ -16,6 +16,7 @@
 
 using System;
 using QuantConnect.Data;
+using QuantConnect.Util;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
 using QuantConnect.Data.UniverseSelection;
@@ -37,8 +38,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <param name="config">The subscription's configuration</param>
         /// <param name="date">The date this factory was produced to read data for</param>
         /// <param name="isLiveMode">True if we're in live mode, false for backtesting</param>
-        public BaseDataCollectionAggregatorReader(IDataCacheProvider dataCacheProvider, SubscriptionDataConfig config, DateTime date, bool isLiveMode)
-            : base(dataCacheProvider, config, date, isLiveMode)
+        public BaseDataCollectionAggregatorReader(IDataCacheProvider dataCacheProvider, SubscriptionDataConfig config, DateTime date,
+            bool isLiveMode, IObjectStore objectStore)
+            : base(dataCacheProvider, config, date, isLiveMode, objectStore)
         {
             _collectionType = config.Type;
         }
@@ -52,9 +54,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         {
             foreach (var point in base.Read(source))
             {
-                if (point is BaseDataCollection)
+                if (point is BaseDataCollection collection && !collection.Data.IsNullOrEmpty())
                 {
-                    // if underlying already is returning a collection let it through as is
+                    // if underlying already is returning an aggregated collection let it through as is
                     yield return point;
                 }
                 else
@@ -70,7 +72,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     {
                         _collection = (BaseDataCollection)Activator.CreateInstance(_collectionType);
                         _collection.Time = point.Time;
-                        _collection.Symbol = point.Symbol;
+                        _collection.Symbol = Config.Symbol;
                         _collection.EndTime = point.EndTime;
                     }
                     // aggregate the data points

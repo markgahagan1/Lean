@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,7 +20,6 @@ using ProtoBuf;
 using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Serialization;
 using QuantConnect.Securities;
-using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Orders
 {
@@ -36,6 +35,8 @@ namespace QuantConnect.Orders
         private decimal? _limitPrice;
         private decimal? _triggerPrice;
         private decimal? _stopPrice;
+        private decimal? _trailingAmount;
+        private bool? _trailingAsPercentage;
 
         /// <summary>
         /// Id of the order this event comes from.
@@ -186,6 +187,53 @@ namespace QuantConnect.Orders
         }
 
         /// <summary>
+        /// True if the order event's option is In-The-Money (ITM)
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [ProtoMember(17)]
+        public bool IsInTheMoney { get; set; }
+
+        /// <summary>
+        /// The trailing stop amount
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [ProtoMember(18)]
+        public decimal? TrailingAmount
+        {
+            get { return _trailingAmount; }
+            set
+            {
+                if (value.HasValue)
+                {
+                    _trailingAmount = value.Value.Normalize();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the <see cref="TrailingAmount"/> is a percentage or an absolute currency value
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [ProtoMember(19)]
+        public bool? TrailingAsPercentage
+        {
+            get { return _trailingAsPercentage; }
+            set
+            {
+                if (value.HasValue)
+                {
+                    _trailingAsPercentage = value.Value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The order ticket associated to the order
+        /// </summary>
+        [JsonIgnore]
+        public OrderTicket Ticket { get; set; }
+
+        /// <summary>
         /// Order Event empty constructor required for json converter
         /// </summary>
         public OrderEvent()
@@ -240,6 +288,7 @@ namespace QuantConnect.Orders
             OrderId = order.Id;
             Symbol = order.Symbol;
             Status = order.Status;
+            Quantity = order.Quantity;
             Direction = order.Direction;
 
             //Initialize to zero, manually set fill quantity
@@ -262,40 +311,7 @@ namespace QuantConnect.Orders
         /// <filterpriority>2</filterpriority>
         public override string ToString()
         {
-            var message = Invariant($"Time: {UtcTime} OrderID: {OrderId} EventID: {Id} Symbol: {Symbol.Value} Status: {Status} Quantity: {Quantity}");
-            if (FillQuantity != 0)
-            {
-                message += Invariant($" FillQuantity: {FillQuantity} FillPrice: {FillPrice.SmartRounding()} {FillPriceCurrency}");
-            }
-
-            if (LimitPrice.HasValue)
-            {
-                message += Invariant($" LimitPrice: {LimitPrice.Value.SmartRounding()}");
-            }
-            if (StopPrice.HasValue)
-            {
-                message += Invariant($" StopPrice: {StopPrice.Value.SmartRounding()}");
-            }
-            if (TriggerPrice.HasValue)
-            {
-                message += Invariant($" TriggerPrice: {TriggerPrice.Value.SmartRounding()}");
-            }
-
-            // attach the order fee so it ends up in logs properly.
-            if (OrderFee.Value.Amount != 0m) message += Invariant($" OrderFee: {OrderFee}");
-
-            // add message from brokerage
-            if (!string.IsNullOrEmpty(Message))
-            {
-                message += Invariant($" Message: {Message}");
-            }
-
-            if (Symbol.SecurityType.IsOption())
-            {
-                message += Invariant($" IsAssignment: {IsAssignment}");
-            }
-
-            return message;
+            return Messages.OrderEvent.ToString(this);
         }
 
         /// <summary>
@@ -303,40 +319,7 @@ namespace QuantConnect.Orders
         /// </summary>
         public string ShortToString()
         {
-            var message = Invariant($"{UtcTime} OID:{OrderId} {Symbol.Value} {Status} Q:{Quantity}");
-            if (FillQuantity != 0)
-            {
-                message += Invariant($" FQ:{FillQuantity} FP:{FillPrice.SmartRounding()} {FillPriceCurrency}");
-            }
-
-            if (LimitPrice.HasValue)
-            {
-                message += Invariant($" LP:{LimitPrice.Value.SmartRounding()}");
-            }
-            if (StopPrice.HasValue)
-            {
-                message += Invariant($" SP:{StopPrice.Value.SmartRounding()}");
-            }
-            if (TriggerPrice.HasValue)
-            {
-                message += Invariant($" TP:{TriggerPrice.Value.SmartRounding()}");
-            }
-
-            // attach the order fee so it ends up in logs properly.
-            if (OrderFee.Value.Amount != 0m) message += Invariant($" OF:{OrderFee}");
-
-            // add message from brokerage
-            if (!string.IsNullOrEmpty(Message))
-            {
-                message += Invariant($" M:{Message}");
-            }
-
-            if (Symbol.SecurityType.IsOption())
-            {
-                message += Invariant($" IA:{IsAssignment}");
-            }
-
-            return message;
+            return Messages.OrderEvent.ShortToString(this);
         }
 
         /// <summary>
@@ -374,6 +357,7 @@ namespace QuantConnect.Orders
                 serializedOrderEvent.Message)
             {
                 IsAssignment = serializedOrderEvent.IsAssignment,
+                IsInTheMoney = serializedOrderEvent.IsInTheMoney,
                 LimitPrice = serializedOrderEvent.LimitPrice,
                 StopPrice = serializedOrderEvent.StopPrice,
                 FillPriceCurrency = serializedOrderEvent.FillPriceCurrency,

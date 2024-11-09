@@ -70,5 +70,21 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             entry.Message.Contains("found no source of contracts for NONEXISTING 2X for date 20131011 for any tick type", StringComparison.InvariantCultureIgnoreCase)));
             Assert.IsEmpty(result);
         }
+
+        [TestCase("20201007", 2)]
+        [TestCase("20131007", 5)]
+        public void UsesMultipleResolutions(string strDate, int expectedCount)
+        {
+            // we don't have minute data for this date
+            var date = Time.ParseDate(strDate);
+
+            var symbol = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, date);
+            var futureChain = _provider.GetFutureContractList(symbol, date).ToList();
+
+            Assert.IsTrue(futureChain.All(x => x.ID.Date.Date >= date));
+            Assert.IsTrue(futureChain.All(x => x.SecurityType == SecurityType.Future));
+            Assert.IsTrue(futureChain.All(x => x.ID.Symbol == Futures.Indices.SP500EMini));
+            Assert.AreEqual(expectedCount, futureChain.Count);
+        }
     }
 }

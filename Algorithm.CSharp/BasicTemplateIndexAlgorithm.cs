@@ -30,11 +30,11 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="indexes" />
     public class BasicTemplateIndexAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
-        protected Symbol Spx;
-        protected Symbol SpxOption;
+        protected Symbol Spx { get; set; }
+        protected Symbol SpxOption { get; set; }
         private ExponentialMovingAverage _emaSlow;
         private ExponentialMovingAverage _emaFast;
-        
+
         protected virtual Resolution Resolution => Resolution.Minute;
         protected virtual int StartDay => 4;
 
@@ -61,8 +61,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             AddIndexOptionContract(SpxOption, Resolution);
 
-            _emaSlow = EMA(Spx, 80);
-            _emaFast = EMA(Spx, 200);
+            _emaSlow = EMA(Spx, Resolution > Resolution.Minute ? 6 : 80);
+            _emaFast = EMA(Spx, Resolution > Resolution.Minute ? 2 : 200);
+
+            Settings.DailyPreciseEndTime = true;
         }
 
         /// <summary>
@@ -91,12 +93,25 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
+        /// <summary>
+        /// Asserts indicators are ready
+        /// </summary>
+        /// <exception cref="RegressionTestException"></exception>
+        protected void AssertIndicators()
+        {
+            if (!_emaSlow.IsReady || !_emaFast.IsReady)
+            {
+                throw new RegressionTestException("Indicators are not ready!");
+            }
+        }
+
         public override void OnEndOfAlgorithm()
         {
             if (Portfolio[Spx].TotalSaleVolume > 0)
             {
-                throw new Exception("Index is not tradable.");
+                throw new RegressionTestException("Index is not tradable.");
             }
+            AssertIndicators();
         }
 
         /// <summary>
@@ -107,12 +122,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public virtual long DataPoints => 16690;
+        public virtual long DataPoints => 16199;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -120,52 +135,42 @@ namespace QuantConnect.Algorithm.CSharp
         public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
-            {"Average Win", "0%"},
-            {"Average Loss", "-53.10%"},
-            {"Compounding Annual Return", "-92.544%"},
-            {"Drawdown", "10.100%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "-9.915%"},
-            {"Sharpe Ratio", "-3.845"},
-            {"Probabilistic Sharpe Ratio", "0.053%"},
-            {"Loss Rate", "100%"},
-            {"Win Rate", "0%"},
+            {"Total Orders", "3"},
+            {"Average Win", "7.08%"},
+            {"Average Loss", "0%"},
+            {"Compounding Annual Return", "603.355%"},
+            {"Drawdown", "3.400%"},
+            {"Expectancy", "0"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "1064395"},
+            {"Net Profit", "6.440%"},
+            {"Sharpe Ratio", "-4.563"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "0.781%"},
+            {"Loss Rate", "0%"},
+            {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.558"},
-            {"Beta", "0.313"},
-            {"Annual Standard Deviation", "0.112"},
-            {"Annual Variance", "0.013"},
-            {"Information Ratio", "-6.652"},
-            {"Tracking Error", "0.125"},
-            {"Treynor Ratio", "-1.379"},
+            {"Alpha", "-0.169"},
+            {"Beta", "0.073"},
+            {"Annual Standard Deviation", "0.028"},
+            {"Annual Variance", "0.001"},
+            {"Information Ratio", "-6.684"},
+            {"Tracking Error", "0.099"},
+            {"Treynor Ratio", "-1.771"},
             {"Total Fees", "$0.00"},
-            {"Estimated Strategy Capacity", "$13000000.00"},
+            {"Estimated Strategy Capacity", "$3000.00"},
             {"Lowest Capacity Asset", "SPX XL80P3GHDZXQ|SPX 31"},
-            {"Fitness Score", "0.039"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.763"},
-            {"Return Over Maximum Drawdown", "-9.371"},
-            {"Portfolio Turnover", "0.278"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "0668385036aba3e95127607dfc2f1a59"}
+            {"Portfolio Turnover", "23.97%"},
+            {"OrderListHash", "51f1bc2ea080df79748dc66c2520b782"}
         };
     }
 }

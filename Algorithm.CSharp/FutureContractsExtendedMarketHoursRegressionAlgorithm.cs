@@ -41,10 +41,10 @@ namespace QuantConnect.Algorithm.CSharp
             SetEndDate(2013, 10, 11);
 
             var esFutureSymbol = QuantConnect.Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2013, 12, 20));
-            _es = AddFutureContract(esFutureSymbol, Resolution.Hour, fillDataForward: true, extendedMarketHours: true);
+            _es = AddFutureContract(esFutureSymbol, Resolution.Hour, fillForward: true, extendedMarketHours: true);
 
             var gcFutureSymbol = QuantConnect.Symbol.CreateFuture(Futures.Metals.Gold, Market.COMEX, new DateTime(2013, 10, 29));
-            _gc = AddFutureContract(gcFutureSymbol, Resolution.Hour, fillDataForward: true, extendedMarketHours: false);
+            _gc = AddFutureContract(gcFutureSymbol, Resolution.Hour, fillForward: true, extendedMarketHours: false);
         }
 
         public override void OnData(Slice slice)
@@ -71,22 +71,22 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_esRanOnRegularHours)
             {
-                throw new Exception($"Algorithm should have run on regular hours for {_es.Symbol} future, which enabled extended market hours");
+                throw new RegressionTestException($"Algorithm should have run on regular hours for {_es.Symbol} future, which enabled extended market hours");
             }
 
             if (!_esRanOnExtendedHours)
             {
-                throw new Exception($"Algorithm should have run on extended hours for {_es.Symbol} future, which enabled extended market hours");
+                throw new RegressionTestException($"Algorithm should have run on extended hours for {_es.Symbol} future, which enabled extended market hours");
             }
 
             if (!_gcRanOnRegularHours)
             {
-                throw new Exception($"Algorithm should have run on regular hours for {_gc.Symbol} future, which did not enable extended market hours");
+                throw new RegressionTestException($"Algorithm should have run on regular hours for {_gc.Symbol} future, which did not enable extended market hours");
             }
 
             if (_gcRanOnExtendedHours)
             {
-                throw new Exception($"Algorithm should have not run on extended hours for {_gc.Symbol} future, which did not enable extended market hours");
+                throw new RegressionTestException($"Algorithm should have not run on extended hours for {_gc.Symbol} future, which did not enable extended market hours");
             }
         }
 
@@ -98,7 +98,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -111,18 +111,26 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "0"},
+            {"Total Orders", "0"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100000"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -137,25 +145,7 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", ""},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "79228162514264337593543950335"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
+            {"Portfolio Turnover", "0%"},
             {"OrderListHash", "d41d8cd98f00b204e9800998ecf8427e"}
         };
     }

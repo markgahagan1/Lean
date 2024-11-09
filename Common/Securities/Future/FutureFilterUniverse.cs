@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,7 +16,6 @@
 
 using System;
 using System.Collections.Generic;
-using QuantConnect.Data;
 using System.Linq;
 using QuantConnect.Securities.Future;
 using QuantConnect.Util;
@@ -26,13 +25,13 @@ namespace QuantConnect.Securities
     /// <summary>
     /// Represents futures symbols universe used in filtering.
     /// </summary>
-    public class FutureFilterUniverse : ContractSecurityFilterUniverse<FutureFilterUniverse>
+    public class FutureFilterUniverse : ContractSecurityFilterUniverse<FutureFilterUniverse, Symbol>
     {
         /// <summary>
         /// Constructs FutureFilterUniverse
         /// </summary>
-        public FutureFilterUniverse(IEnumerable<Symbol> allSymbols, BaseData underlying)
-            : base(allSymbols, underlying)
+        public FutureFilterUniverse(IEnumerable<Symbol> allSymbols, DateTime localTime)
+            : base(allSymbols, localTime)
         {
         }
 
@@ -43,6 +42,24 @@ namespace QuantConnect.Securities
         protected override bool IsStandard(Symbol symbol)
         {
             return FutureSymbol.IsStandard(symbol);
+        }
+
+        /// <summary>
+        /// Gets the symbol from the data
+        /// </summary>
+        /// <returns>The symbol that represents the datum</returns>
+        protected override Symbol GetSymbol(Symbol data)
+        {
+            return data;
+        }
+
+        /// <summary>
+        /// Creates a new instance of the data type for the given symbol
+        /// </summary>
+        /// <returns>A data instance for the given symbol, which is just the symbol itself</returns>
+        protected override Symbol CreateDataInstance(Symbol symbol)
+        {
+            return symbol;
         }
 
         /// <summary>
@@ -70,8 +87,7 @@ namespace QuantConnect.Securities
         /// <returns><see cref="FutureFilterUniverse"/> with filter applied</returns>
         public static FutureFilterUniverse Where(this FutureFilterUniverse universe, Func<Symbol, bool> predicate)
         {
-            universe.AllSymbols = universe.AllSymbols.Where(predicate).ToList();
-            universe.IsDynamicInternal = true;
+            universe.Data = universe.Data.Where(predicate).ToList();
             return universe;
         }
 
@@ -83,8 +99,7 @@ namespace QuantConnect.Securities
         /// <returns><see cref="FutureFilterUniverse"/> with filter applied</returns>
         public static FutureFilterUniverse Select(this FutureFilterUniverse universe, Func<Symbol, Symbol> mapFunc)
         {
-            universe.AllSymbols = universe.AllSymbols.Select(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
+            universe.Data = universe.Data.Select(mapFunc).ToList();
             return universe;
         }
 
@@ -96,8 +111,7 @@ namespace QuantConnect.Securities
         /// <returns><see cref="FutureFilterUniverse"/> with filter applied</returns>
         public static FutureFilterUniverse SelectMany(this FutureFilterUniverse universe, Func<Symbol, IEnumerable<Symbol>> mapFunc)
         {
-            universe.AllSymbols = universe.AllSymbols.SelectMany(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
+            universe.Data = universe.Data.SelectMany(mapFunc).ToList();
             return universe;
         }
     }

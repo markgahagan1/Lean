@@ -49,9 +49,9 @@ namespace QuantConnect.Algorithm.CSharp
             AddFutureOption(goldFutures.Symbol);
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
-            foreach (var symbol in data.QuoteBars.Keys)
+            foreach (var symbol in slice.QuoteBars.Keys)
             {
                 // Check that we are in regular hours, we can place a market order (on extended hours, limit orders should be used)
                 if (_expectedSymbols.ContainsKey(symbol) && IsInRegularHours(symbol))
@@ -72,11 +72,11 @@ namespace QuantConnect.Algorithm.CSharp
             var notEncountered = _expectedSymbols.Where(kvp => !kvp.Value).ToList();
             if (notEncountered.Any())
             {
-                throw new Exception($"Expected all Symbols encountered and invested in, but the following were not found: {string.Join(", ", notEncountered.Select(kvp => kvp.Value.ToStringInvariant()))}");
+                throw new RegressionTestException($"Expected all Symbols encountered and invested in, but the following were not found: {string.Join(", ", notEncountered.Select(kvp => kvp.Value.ToStringInvariant()))}");
             }
             if (!Portfolio.Invested)
             {
-                throw new Exception("Expected holdings at the end of algorithm, but none were found.");
+                throw new RegressionTestException("Expected holdings at the end of algorithm, but none were found.");
             }
         }
 
@@ -104,12 +104,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 24376;
+        public long DataPoints => 24379;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -117,52 +117,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "4"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "-25.338%"},
             {"Drawdown", "0.200%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99760.12"},
             {"Net Profit", "-0.240%"},
-            {"Sharpe Ratio", "-9.692"},
+            {"Sharpe Ratio", "-10.528"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.127"},
+            {"Alpha", "0.09"},
             {"Beta", "-0.629"},
             {"Annual Standard Deviation", "0.027"},
             {"Annual Variance", "0.001"},
             {"Information Ratio", "-12.58"},
             {"Tracking Error", "0.07"},
-            {"Treynor Ratio", "0.415"},
+            {"Treynor Ratio", "0.451"},
             {"Total Fees", "$9.88"},
             {"Estimated Strategy Capacity", "$31000000.00"},
             {"Lowest Capacity Asset", "OG 31BFX0QKBVPGG|GC XE1Y0ZJ8NQ8T"},
-            {"Fitness Score", "0.013"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-112.343"},
-            {"Portfolio Turnover", "0.026"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "ebde540d026c0bf7055caf5bf2eeded5"}
+            {"Portfolio Turnover", "2.65%"},
+            {"OrderListHash", "82e3ec4837c53db0254b0e6329d1937b"}
         };
     }
 }

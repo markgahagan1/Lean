@@ -98,6 +98,16 @@ namespace QuantConnect.Util
         /// </summary>
         /// <param name="currencyPair">The pair to check for</param>
         /// <returns>True if the pair can be decomposed into base and quote currencies, false if not</returns>
+        public static bool IsForexDecomposable(string currencyPair)
+        {
+            return !string.IsNullOrEmpty(currencyPair) && currencyPair.Length == 6;
+        }
+
+        /// <summary>
+        /// Checks whether a symbol is decomposable into a base and a quote currency
+        /// </summary>
+        /// <param name="currencyPair">The pair to check for</param>
+        /// <returns>True if the pair can be decomposed into base and quote currencies, false if not</returns>
         public static bool IsDecomposable(Symbol currencyPair)
         {
             if (currencyPair == null)
@@ -110,7 +120,7 @@ namespace QuantConnect.Util
                 return currencyPair.Value.Length == 6;
             }
 
-            if (currencyPair.SecurityType == SecurityType.Cfd || currencyPair.SecurityType == SecurityType.Crypto)
+            if (currencyPair.SecurityType == SecurityType.Cfd || currencyPair.SecurityType == SecurityType.Crypto || currencyPair.SecurityType == SecurityType.CryptoFuture)
             {
                 var symbolProperties = SymbolPropertiesDatabase.Value.GetSymbolProperties(
                     currencyPair.ID.Market,
@@ -241,7 +251,7 @@ namespace QuantConnect.Util
             return Match.NoMatch;
         }
 
-        private static bool IsValidSecurityType(SecurityType? securityType, bool throwException)
+        public static bool IsValidSecurityType(SecurityType? securityType, bool throwException)
         {
             if (securityType == null)
             {
@@ -254,7 +264,8 @@ namespace QuantConnect.Util
 
             if (securityType != SecurityType.Forex &&
                 securityType != SecurityType.Cfd &&
-                securityType != SecurityType.Crypto)
+                securityType != SecurityType.Crypto &&
+                securityType != SecurityType.CryptoFuture)
             {
                 if (throwException)
                 {

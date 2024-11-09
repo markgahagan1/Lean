@@ -29,7 +29,7 @@ using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Algorithm
 {
-    [TestFixture]
+    [TestFixture, Parallelizable(ParallelScope.Fixtures)]
     public class AlgorithmPlottingTests
     {
         private Symbol _spy;
@@ -105,7 +105,7 @@ namespace QuantConnect.Tests.Algorithm
             {
                 for (var i = 0; i < 1000; i++)
                 {
-                    _algorithm.GetChartUpdates(true);
+                    _algorithm.GetChartUpdates(true).ToList();
                     Thread.Sleep(1);
                 }
             });
@@ -168,9 +168,9 @@ class PythonCustomIndicator(PythonIndicator):
                 customIndicator.Update(input);
                 customIndicator.Current.Value = customIndicator.Value;
                 Assert.DoesNotThrow(() => _algorithm.Plot("PlotTest", customIndicator));
-                var charts = _algorithm.GetChartUpdates();
+                var charts = _algorithm.GetChartUpdates().ToList();
                 Assert.IsTrue(charts.Where(x => x.Name == "PlotTest").Any());
-                Assert.AreEqual(10, charts.First().Series["custom"].Values.First().y);
+                Assert.AreEqual(10, charts.First().Series["custom"].GetValues<ChartPoint>().First().y);
             }
         }
 
@@ -194,11 +194,31 @@ class CustomIndicator:
 
                 var customIndicator = module.GetAttr("CustomIndicator").Invoke();
                 Assert.DoesNotThrow(() => _algorithm.Plot("PlotTest", customIndicator));
-                var charts = _algorithm.GetChartUpdates();
+                var charts = _algorithm.GetChartUpdates().ToList();
                 Assert.IsFalse(charts.Where(x => x.Name == "PlotTest").Any());
                 Assert.IsTrue(charts.Where(x => x.Name == "Strategy Equity").Any());
-                Assert.AreEqual(10, charts.First().Series["PlotTest"].Values.First().y);
+                Assert.AreEqual(10, charts.First().Series["PlotTest"].GetValues<ChartPoint>().First().y);
             }
+        }
+
+        [Test]
+        public void PlotIndicatorPlotsBaseIndicator()
+        {
+            var sma1 = new SimpleMovingAverage(1);
+            var sma2 = new SimpleMovingAverage(1);
+            var ratio = sma1.Over(sma2);
+
+            Assert.DoesNotThrow(() => _algorithm.PlotIndicator("PlotTest", ratio));
+
+            sma1.Update(new DateTime(2022, 11, 15), 1);
+            sma2.Update(new DateTime(2022, 11, 15), 2);
+
+            var charts = _algorithm.GetChartUpdates().ToList();
+            Assert.IsTrue(charts.Where(x => x.Name == "PlotTest").Any());
+
+            var chart = charts.First();
+            Assert.AreEqual("PlotTest", chart.Name);
+            Assert.AreEqual(sma1.Current.Value / sma2.Current.Value, chart.Series[ratio.Name].GetValues<ChartPoint>().First().y);
         }
     }
 }

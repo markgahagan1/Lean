@@ -37,14 +37,14 @@ namespace QuantConnect.Algorithm.CSharp
             SetStartDate(2008, 08, 20);
             SetEndDate(2008, 10, 1);
 
-            AddEquity("SPWR", Resolution.Hour, fillDataForward:false);
+            AddEquity("SPWR", Resolution.Hour, fillForward:false);
         }
 
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             _dateTime = Time.Date;
             if (!Portfolio.Invested)
@@ -52,7 +52,7 @@ namespace QuantConnect.Algorithm.CSharp
                 SetHoldings("SPWR", 1);
             }
 
-            foreach (var symbolChangedEvent in data.SymbolChangedEvents.Values)
+            foreach (var symbolChangedEvent in slice.SymbolChangedEvents.Values)
             {
                 _changedEvent = symbolChangedEvent;
                 Log($"{Time}: {symbolChangedEvent.OldSymbol} -> {symbolChangedEvent.NewSymbol}");
@@ -63,11 +63,11 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_dateTime != EndDate.Date)
             {
-                throw new Exception($"Last day was {_dateTime}, should be algorithm end date: {EndDate.Date}");
+                throw new RegressionTestException($"Last day was {_dateTime}, should be algorithm end date: {EndDate.Date}");
             }
             if (_changedEvent == null)
             {
-                throw new Exception("We got not symbol change event! 'SPWR' should of been mapped");
+                throw new RegressionTestException("We got not symbol change event! 'SPWR' should of been mapped");
             }
         }
 
@@ -79,7 +79,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -92,52 +92,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "-78.316%"},
             {"Drawdown", "31.700%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "83636.96"},
             {"Net Profit", "-16.363%"},
-            {"Sharpe Ratio", "-0.474"},
+            {"Sharpe Ratio", "-0.498"},
+            {"Sortino Ratio", "-0.507"},
             {"Probabilistic Sharpe Ratio", "25.138%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.335"},
+            {"Alpha", "0.357"},
             {"Beta", "2.004"},
             {"Annual Standard Deviation", "0.924"},
             {"Annual Variance", "0.854"},
             {"Information Ratio", "-0.073"},
             {"Tracking Error", "0.718"},
-            {"Treynor Ratio", "-0.218"},
+            {"Treynor Ratio", "-0.23"},
             {"Total Fees", "$5.40"},
             {"Estimated Strategy Capacity", "$2400000.00"},
             {"Lowest Capacity Asset", "SPWR TDQZFPKOZ5UT"},
-            {"Fitness Score", "0.008"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.038"},
-            {"Return Over Maximum Drawdown", "-2.536"},
-            {"Portfolio Turnover", "0.033"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "4bf8a2d15c6c6ac98e55d7c6ea10f54e"}
+            {"Portfolio Turnover", "2.34%"},
+            {"OrderListHash", "22aace3d4bb618a825254b8bf14d6340"}
         };
     }
 }

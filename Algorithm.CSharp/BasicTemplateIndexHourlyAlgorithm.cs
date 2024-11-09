@@ -18,12 +18,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 408;
+        public override long DataPoints => 401;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -31,52 +31,42 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "70"},
-            {"Average Win", "0%"},
-            {"Average Loss", "-0.23%"},
-            {"Compounding Annual Return", "-34.441%"},
-            {"Drawdown", "2.000%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "-2.028%"},
-            {"Sharpe Ratio", "-11.139"},
-            {"Probabilistic Sharpe Ratio", "0.000%"},
-            {"Loss Rate", "100%"},
-            {"Win Rate", "0%"},
-            {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.269"},
-            {"Beta", "0.086"},
-            {"Annual Standard Deviation", "0.023"},
-            {"Annual Variance", "0.001"},
-            {"Information Ratio", "-3.624"},
-            {"Tracking Error", "0.094"},
-            {"Treynor Ratio", "-3.042"},
+            {"Total Orders", "81"},
+            {"Average Win", "1.28%"},
+            {"Average Loss", "-0.06%"},
+            {"Compounding Annual Return", "-20.546%"},
+            {"Drawdown", "1.800%"},
+            {"Expectancy", "-0.402"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "990775"},
+            {"Net Profit", "-0.922%"},
+            {"Sharpe Ratio", "-2.903"},
+            {"Sortino Ratio", "-6.081"},
+            {"Probabilistic Sharpe Ratio", "22.230%"},
+            {"Loss Rate", "97%"},
+            {"Win Rate", "3%"},
+            {"Profit-Loss Ratio", "19.95"},
+            {"Alpha", "-0.157"},
+            {"Beta", "0.025"},
+            {"Annual Standard Deviation", "0.053"},
+            {"Annual Variance", "0.003"},
+            {"Information Ratio", "-2.07"},
+            {"Tracking Error", "0.121"},
+            {"Treynor Ratio", "-6.189"},
             {"Total Fees", "$0.00"},
-            {"Estimated Strategy Capacity", "$310000.00"},
+            {"Estimated Strategy Capacity", "$300000.00"},
             {"Lowest Capacity Asset", "SPX XL80P3GHDZXQ|SPX 31"},
-            {"Fitness Score", "0.002"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-14.51"},
-            {"Return Over Maximum Drawdown", "-17.213"},
-            {"Portfolio Turnover", "0.299"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "3eb56c551f20e2ffa1c56c47c5ee6667"}
+            {"Portfolio Turnover", "24.63%"},
+            {"OrderListHash", "44325fc1fdebb8e54f64a3f6e8a4bcd7"}
         };
     }
 }

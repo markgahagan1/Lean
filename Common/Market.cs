@@ -65,7 +65,11 @@ namespace QuantConnect
             Tuple.Create(CFE, 33),
             Tuple.Create(FTX, 34),
             Tuple.Create(FTXUS, 35),
-            Tuple.Create(BinanceUS, 36)
+            Tuple.Create(BinanceUS, 36),
+            Tuple.Create(Bybit, 37),
+            Tuple.Create(Coinbase, 38),
+            Tuple.Create(InteractiveBrokers, 39),
+            Tuple.Create(EUREX, 40)
         };
 
         static Market()
@@ -151,6 +155,11 @@ namespace QuantConnect
         public const string CME = "cme";
 
         /// <summary>
+        /// EUREX
+        /// </summary>
+        public const string EUREX = "eurex";
+
+        /// <summary>
         /// Singapore Exchange
         /// </summary>
         public const string SGX = "sgx";
@@ -168,7 +177,8 @@ namespace QuantConnect
         /// <summary>
         /// GDAX
         /// </summary>
-        public const string GDAX = "gdax";
+        [Obsolete("The GDAX constant is deprecated. Please use Coinbase instead.")]
+        public const string GDAX = Coinbase;
 
         /// <summary>
         /// Kraken
@@ -231,6 +241,21 @@ namespace QuantConnect
         public const string BinanceUS = "binanceus";
 
         /// <summary>
+        /// Bybit
+        /// </summary>
+        public const string Bybit = "bybit";
+
+        /// <summary>
+        /// Coinbase
+        /// </summary>
+        public const string Coinbase = "coinbase";
+
+        /// <summary>
+        /// InteractiveBrokers market
+        /// </summary>
+        public const string InteractiveBrokers = "interactivebrokers";
+
+        /// <summary>
         /// Adds the specified market to the map of available markets with the specified identifier.
         /// </summary>
         /// <param name="market">The market string to add</param>
@@ -239,9 +264,7 @@ namespace QuantConnect
         {
             if (identifier >= MaxMarketIdentifier)
             {
-                throw new ArgumentOutOfRangeException(nameof(identifier),
-                    $"The market identifier is limited to positive values less than {MaxMarketIdentifier.ToStringInvariant()}."
-                );
+                throw new ArgumentOutOfRangeException(nameof(identifier), Messages.Market.InvalidMarketIdentifier(MaxMarketIdentifier));
             }
 
             market = market.ToLowerInvariant();
@@ -249,18 +272,13 @@ namespace QuantConnect
             int marketIdentifier;
             if (Markets.TryGetValue(market, out marketIdentifier) && identifier != marketIdentifier)
             {
-                throw new ArgumentException(
-                    $"Attempted to add an already added market with a different identifier. Market: {market}"
-                );
+                throw new ArgumentException(Messages.Market.TriedToAddExistingMarketWithDifferentIdentifier(market));
             }
 
             string existingMarket;
             if (ReverseMarkets.TryGetValue(identifier, out existingMarket))
             {
-                throw new ArgumentException(
-                    "Attempted to add a market identifier that is already in use. " +
-                    $"New Market: {market} Existing Market: {existingMarket}"
-                );
+                throw new ArgumentException(Messages.Market.TriedToAddExistingMarketIdentifier(market, existingMarket));
             }
 
             // update our maps.

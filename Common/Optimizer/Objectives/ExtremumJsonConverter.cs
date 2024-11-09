@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,6 +18,9 @@ using QuantConnect.Util;
 
 namespace QuantConnect.Optimizer.Objectives
 {
+    /// <summary>
+    /// Class for converting string values to Maximization or Minimization strategy objects
+    /// </summary>
     public class ExtremumJsonConverter : TypeChangeJsonConverter<Extremum, string>
     {
         /// <summary>
@@ -25,6 +28,9 @@ namespace QuantConnect.Optimizer.Objectives
         /// </summary>
         protected override bool PopulateProperties => false;
 
+        /// <summary>
+        /// Converts a Extremum object into a string
+        /// </summary>
         protected override string Convert(Extremum value)
         {
             return value.GetType() == typeof(Maximization)
@@ -32,6 +38,10 @@ namespace QuantConnect.Optimizer.Objectives
                 : "min";
         }
 
+        /// <summary>
+        /// Converts a string into its corresponding Extremum object
+        /// </summary>
+        /// <param name="value"></param>
         protected override Extremum Convert(string value)
         {
             switch (value.ToLowerInvariant())
@@ -39,7 +49,7 @@ namespace QuantConnect.Optimizer.Objectives
                 case "max": return new Maximization();
                 case "min": return new Minimization();
                 default:
-                    throw new InvalidOperationException("ExtremumJsonConverter.Convert: could not recognize target direction");
+                    throw new InvalidOperationException($"ExtremumJsonConverter.Convert: {Messages.ExtremumJsonConverter.UnrecognizedTargetDirection}");
             }
         }
     }

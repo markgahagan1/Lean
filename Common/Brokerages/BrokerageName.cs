@@ -13,6 +13,8 @@
  * limitations under the License.
 */
 
+using System;
+
 namespace QuantConnect.Brokerages
 {
     /// <summary>
@@ -64,6 +66,7 @@ namespace QuantConnect.Brokerages
         /// <summary>
         /// Transaction and submit/execution rules will use gdax models
         /// </summary>
+        [Obsolete("GDAX brokerage name is deprecated. Use Coinbase instead.")]
         GDAX = 12,
 
         /// <summary>
@@ -120,5 +123,60 @@ namespace QuantConnect.Brokerages
         /// Transaction and submit/execution rules will use Binance.US models
         /// </summary>
         BinanceUS,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use Wolverine models
+        /// </summary>
+        Wolverine,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use TDameritrade models
+        /// </summary>
+        TDAmeritrade,
+
+        /// <summary>
+        /// Binance Futures USDⓈ-Margined contracts are settled and collateralized in their quote cryptocurrency, USDT or BUSD
+        /// </summary>
+        BinanceFutures,
+
+        /// <summary>
+        /// Binance Futures COIN-Margined contracts are settled and collateralized in their based cryptocurrency.
+        /// </summary>
+        BinanceCoinFutures,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use RBI models
+        /// </summary>
+        RBI,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use Bybit models
+        /// </summary>
+        Bybit,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use Eze models
+        /// </summary>
+        Eze,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use Axos models
+        /// </summary>
+        Axos,
+        
+        /// <summary>
+        /// Transaction and submit/execution rules will use Coinbase broker's model
+        /// </summary>
+        Coinbase,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use TradeStation models
+        /// </summary>
+        TradeStation,
+
+        /// <summary>
+        /// Transaction and submit/execution rules will use Terminal link models
+        /// </summary>
+        TerminalLink
     }
 }

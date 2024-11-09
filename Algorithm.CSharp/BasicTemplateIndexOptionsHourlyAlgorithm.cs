@@ -33,12 +33,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public override Language[] Languages { get; } = { Language.CSharp };
+        public override List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 2212;
+        public override long DataPoints => 1269;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -46,52 +46,42 @@ namespace QuantConnect.Algorithm.CSharp
         public override int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "70"},
+            {"Total Orders", "81"},
             {"Average Win", "0.00%"},
             {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "0%"},
+            {"Compounding Annual Return", "-0.006%"},
             {"Drawdown", "0.000%"},
-            {"Expectancy", "0.000"},
-            {"Net Profit", "0%"},
-            {"Sharpe Ratio", "0"},
-            {"Probabilistic Sharpe Ratio", "36.504%"},
+            {"Expectancy", "-0.486"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "999995"},
+            {"Net Profit", "0.000%"},
+            {"Sharpe Ratio", "-101.77"},
+            {"Sortino Ratio", "-9053542.758"},
+            {"Probabilistic Sharpe Ratio", "17.439%"},
             {"Loss Rate", "97%"},
             {"Win Rate", "3%"},
-            {"Profit-Loss Ratio", "34.00"},
-            {"Alpha", "0"},
+            {"Profit-Loss Ratio", "17.50"},
+            {"Alpha", "-0.003"},
             {"Beta", "-0"},
             {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-0.449"},
             {"Tracking Error", "0.138"},
-            {"Treynor Ratio", "-0"},
+            {"Treynor Ratio", "116.921"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "SPX XL80P59H5E6M|SPX 31"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "0"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "f21910eb98ceaa39e02020de95354d86"}
+            {"Portfolio Turnover", "0.00%"},
+            {"OrderListHash", "75e6584cb26058b09720c3a828b9fbda"}
         };
     }
 }

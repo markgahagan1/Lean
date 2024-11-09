@@ -15,9 +15,11 @@
 
 using System;
 using QuantConnect.Data;
-using QuantConnect.Data.UniverseSelection;
-using QuantConnect.Interfaces;
 using QuantConnect.Packets;
+using QuantConnect.Interfaces;
+using QuantConnect.Data.Market;
+using QuantConnect.Data.Fundamental;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -39,7 +41,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// </summary>
         public virtual bool ShouldStreamSubscription(SubscriptionDataConfig config)
         {
-            return IsStreamingType(config) || !config.IsCustomData && config.Type != typeof(CoarseFundamental);
+            return IsStreamingType(config) || !config.IsCustomData && config.Type != typeof(CoarseFundamental) && config.Type != typeof(Fundamental) && config.Type != typeof(MarginInterestRate);
         }
 
         /// <summary>
@@ -48,8 +50,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         protected static bool IsStreamingType(SubscriptionDataConfig configuration)
         {
             var dataTypeInstance = configuration.Type.GetBaseDataInstance();
-            return dataTypeInstance.GetSource(configuration, DateTime.UtcNow, true)
-                       .TransportMedium == SubscriptionTransportMedium.Streaming;
+            var source = dataTypeInstance.GetSource(configuration, DateTime.UtcNow, true);
+            return source != null && source.TransportMedium == SubscriptionTransportMedium.Streaming;
         }
     }
 }

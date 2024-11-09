@@ -15,7 +15,9 @@
 
 using System;
 using System.Globalization;
+using System.Text;
 using Newtonsoft.Json;
+using QuantConnect.Brokerages;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 
@@ -32,6 +34,8 @@ namespace QuantConnect.Algorithm.CSharp
     /// <meta name="tag" content="runtime statistics" />
     public class LiveTradingFeaturesAlgorithm : QCAlgorithm
     {
+        private bool _isConnected;
+
         /// <summary>
         /// Initialise the Algorithm and Prepare Required Data.
         /// </summary>
@@ -49,6 +53,9 @@ namespace QuantConnect.Algorithm.CSharp
 
             //Custom/Bitcoin Live Data: 24/7
             AddData<Bitcoin>("BTC", Resolution.Second, TimeZones.Utc);
+
+            //if the algorithm is connected to the brokerage
+            _isConnected = true;
         }
 
         /// <summary>
@@ -71,6 +78,13 @@ namespace QuantConnect.Algorithm.CSharp
                 Notify.Email("myemail@gmail.com", "Test", "Test Body", "test attachment");
                 Notify.Sms("+11233456789", Time.ToStringInvariant("u") + ">> Test message from live BTC server.");
                 Notify.Web("http://api.quantconnect.com", Time.ToStringInvariant("u") + ">> Test data packet posted from live BTC server.");
+                Notify.Telegram("id", Time.ToStringInvariant("u") + ">> Test message from live BTC server.");
+                Notify.Ftp("ftp.quantconnect.com", "username", "password", "path/to/file.txt",
+                    Time.ToStringInvariant("u") + ">> Test file from live BTC server.");
+                Notify.Sftp("ftp.quantconnect.com", "username", "password", "path/to/file.txt",
+                    Time.ToStringInvariant("u") + ">> Test file from live BTC server.");
+                Notify.Sftp("ftp.quantconnect.com", "username", "privatekey", "optionalprivatekeypassphrase", "path/to/file.txt",
+                    Time.ToStringInvariant("u") + ">> Test file from live BTC server.");
             }
         }
 
@@ -90,29 +104,55 @@ namespace QuantConnect.Algorithm.CSharp
         }
 
         /// <summary>
+        /// Brokerage message event handler. This method is called for all types of brokerage messages.
+        /// </summary>
+        public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)
+        {
+            Debug($"Brokerage meesage received - {messageEvent.ToString()}");
+        }
+
+        /// <summary>
+        /// Brokerage disconnected event handler. This method is called when the brokerage connection is lost.
+        /// </summary>
+        public override void OnBrokerageDisconnect()
+        {
+            _isConnected = false;
+            Debug($"Brokerage disconnected!");
+        }
+
+        /// <summary>
+        /// Brokerage reconnected event handler. This method is called when the brokerage connection is restored after a disconnection.
+        /// </summary>
+        public override void OnBrokerageReconnect()
+        {
+            _isConnected = true;
+            Debug($"Brokerage reconnected!");
+        }
+
+        /// <summary>
         /// Custom Data Type: Bitcoin data from Quandl - http://www.quandl.com/help/api-for-bitcoin-data
         /// </summary>
         public class Bitcoin : BaseData
         {
             [JsonProperty("timestamp")]
-            public int Timestamp = 0;
+            public int Timestamp { get; set; }
             [JsonProperty("open")]
-            public decimal Open = 0;
+            public decimal Open { get; set; }
             [JsonProperty("high")]
-            public decimal High = 0;
+            public decimal High { get; set; }
             [JsonProperty("low")]
-            public decimal Low = 0;
+            public decimal Low { get; set; }
             [JsonProperty("last")]
-            public decimal Close = 0;
+            public decimal Close { get; set; }
             [JsonProperty("bid")]
-            public decimal Bid = 0;
+            public decimal Bid { get; set; }
             [JsonProperty("ask")]
-            public decimal Ask = 0;
+            public decimal Ask { get; set; }
             [JsonProperty("vwap")]
-            public decimal WeightedPrice = 0;
+            public decimal WeightedPrice { get; set; }
             [JsonProperty("volume")]
-            public decimal VolumeBTC = 0;
-            public decimal VolumeUSD = 0;
+            public decimal VolumeBTC { get; set; }
+            public decimal VolumeUSD { get; set; }
 
             /// <summary>
             /// The end time of this data. Some data covers spans (trade bars)

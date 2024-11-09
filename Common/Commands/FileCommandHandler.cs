@@ -19,6 +19,7 @@ using Newtonsoft.Json;
 using QuantConnect.Logging;
 using System.Collections.Generic;
 using System.Linq;
+using Newtonsoft.Json.Linq;
 
 namespace QuantConnect.Commands
 {
@@ -77,7 +78,7 @@ namespace QuantConnect.Commands
         {
             if (string.IsNullOrEmpty(command.Id))
             {
-                Log.Error($"FileCommandHandler.Acknowledge(): command Id is null or empty, will skip writting result file");
+                Log.Error($"FileCommandHandler.Acknowledge(): {Messages.FileCommandHandler.NullOrEmptyCommandId}");
                 return;
             }
             var resultFilePath = $"{_resultFileBaseName}-{command.Id}.json";
@@ -89,22 +90,23 @@ namespace QuantConnect.Commands
         /// </summary>
         private void ReadCommandFile(string commandFilePath)
         {
-            Log.Trace($"FileCommandHandler.ReadCommandFile(): Reading command file {commandFilePath}");
-            object deserialized;
+            Log.Trace($"FileCommandHandler.ReadCommandFile(): {Messages.FileCommandHandler.ReadingCommandFile(commandFilePath)}");
+            string contents = null;
+            Exception exception = null;
+            object deserialized = null;
             try
             {
-                if (!File.Exists(commandFilePath)) 
+                if (!File.Exists(commandFilePath))
                 {
-                    Log.Error($"FileCommandHandler.ReadCommandFile(): File {commandFilePath} does not exists");
+                    Log.Error($"FileCommandHandler.ReadCommandFile(): {Messages.FileCommandHandler.CommandFileDoesNotExist(commandFilePath)}");
                     return;
-                } 
-                var contents = File.ReadAllText(commandFilePath);
-                deserialized = JsonConvert.DeserializeObject(contents, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All });
+                }
+                contents = File.ReadAllText(commandFilePath);
+                deserialized = JsonConvert.DeserializeObject(contents, Settings);
             }
             catch (Exception err)
             {
-                Log.Error(err);
-                deserialized = null;
+                exception = err;
             }
 
             // remove the file when we're done reading it
@@ -126,6 +128,20 @@ namespace QuantConnect.Commands
             if (item != null)
             {
                 _commands.Enqueue(item);
+                return;
+            }
+
+            var callbackCommand = TryGetCallbackCommand(contents);
+            if (callbackCommand != null)
+            {
+                _commands.Enqueue(callbackCommand);
+                return;
+            }
+
+            if (exception != null)
+            {
+                // if we are here we failed
+                Log.Error(exception);
             }
         }
     }

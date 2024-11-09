@@ -60,15 +60,15 @@ namespace QuantConnect.Exceptions
             var pe = (PythonException)exception;
 
             var key = string.Empty;
-            if (pe.Message.Contains("["))
+            if (pe.Message.Contains('[', StringComparison.InvariantCulture))
             {
                 key = pe.Message.GetStringBetweenChars('[', ']');
             }
-            else if (pe.Message.Contains("\'"))
+            else if (pe.Message.Contains('\'', StringComparison.InvariantCulture))
             {
                 key = pe.Message.GetStringBetweenChars('\'', '\'');
             }
-            var message = $"Trying to retrieve an element from a collection using a key that does not exist in that collection throws a KeyError exception. To prevent the exception, ensure that the {key} key exist in the collection and/or that collection is not empty.";
+            var message = Messages.KeyErrorPythonExceptionInterpreter.KeyNotFoundInCollection(key);
 
             message += PythonUtil.PythonExceptionStackParser(pe.StackTrace);
 

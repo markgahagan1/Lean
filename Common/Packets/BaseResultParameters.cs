@@ -26,11 +26,6 @@ namespace QuantConnect.Packets
     public class BaseResultParameters
     {
         /// <summary>
-        /// Contains population averages scores over the life of the algorithm
-        /// </summary>
-        public AlphaRuntimeStatistics AlphaRuntimeStatistics { get; set; }
-
-        /// <summary>
         /// Trade profit and loss information since the last algorithm result packet
         /// </summary>
         public IDictionary<DateTime, decimal> ProfitLoss { get; set; }
@@ -61,8 +56,35 @@ namespace QuantConnect.Packets
         public IDictionary<string, string> RuntimeStatistics { get; set; }
 
         /// <summary>
+        /// State information of the algorithm.
+        /// </summary>
+        public IDictionary<string, string> State { get; set; }
+
+        /// <summary>
         /// The algorithm's configuration required for report generation
         /// </summary>
         public AlgorithmConfiguration AlgorithmConfiguration { get; set; }
+
+        /// <summary>
+        /// Creates a new instance
+        /// </summary>
+        public BaseResultParameters(IDictionary<string, Chart> charts,
+            IDictionary<int, Order> orders,
+            IDictionary<DateTime, decimal> profitLoss,
+            IDictionary<string, string> statistics,
+            IDictionary<string, string> runtimeStatistics,
+            List<OrderEvent> orderEvents,
+            AlgorithmConfiguration algorithmConfiguration = null,
+            IDictionary<string, string> state = null)
+        {
+            Charts = charts;
+            Orders = orders;
+            ProfitLoss = profitLoss;
+            Statistics = statistics;
+            RuntimeStatistics = runtimeStatistics;
+            OrderEvents = orderEvents;
+            AlgorithmConfiguration = algorithmConfiguration;
+            State = state;
+        }
     }
 }

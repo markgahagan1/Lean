@@ -24,6 +24,13 @@ namespace QuantConnect.Lean.Engine.DataFeeds
     /// </summary>
     public class DefaultDataProvider : IDataProvider, IDisposable
     {
+        private bool _oneTimeWarningLog;
+
+        /// <summary>
+        /// Event raised each time data fetch is finished (successfully or not)
+        /// </summary>
+        public event EventHandler<DataProviderNewDataRequestEventArgs> NewDataRequest;
+
         /// <summary>
         /// Retrieves data from disc to be used in an algorithm
         /// </summary>
@@ -31,19 +38,35 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>A <see cref="Stream"/> of the data requested</returns>
         public virtual Stream Fetch(string key)
         {
+            var success = true;
+            var errorMessage = string.Empty;
             try
             {
-                return new FileStream(key, FileMode.Open, FileAccess.Read, FileShare.Read);
+                return new FileStream(FileExtension.ToNormalizedPath(key), FileMode.Open, FileAccess.Read, FileShare.Read);
             }
             catch (Exception exception)
             {
-                if (exception is DirectoryNotFoundException
-                    || exception is FileNotFoundException)
+                success = false;
+                errorMessage = exception.Message;
+                if (exception is DirectoryNotFoundException)
+                {
+                    if (!_oneTimeWarningLog)
+                    {
+                        _oneTimeWarningLog = true;
+                        Logging.Log.Debug($"DefaultDataProvider.Fetch(): DirectoryNotFoundException: please review data paths, current 'Globals.DataFolder': {Globals.DataFolder}");
+                    }
+                    return null;
+                }
+                else if (exception is FileNotFoundException)
                 {
                     return null;
                 }
 
                 throw;
+            }
+            finally
+            {
+                OnNewDataRequest(new DataProviderNewDataRequestEventArgs(key, success, errorMessage));
             }
         }
 
@@ -53,6 +76,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         public void Dispose()
         {
             //
+        }
+
+        /// <summary>
+        /// Event invocator for the <see cref="NewDataRequest"/> event
+        /// </summary>
+        protected virtual void OnNewDataRequest(DataProviderNewDataRequestEventArgs e)
+        {
+            NewDataRequest?.Invoke(this, e);
         }
     }
 }

@@ -29,9 +29,22 @@ namespace QuantConnect.Interfaces
     public interface IBrokerage : IBrokerageCashSynchronizer, IDisposable
     {
         /// <summary>
-        /// Event that fires each time an order is filled
+        /// Event that fires each time the brokerage order id changes
         /// </summary>
-        event EventHandler<OrderEvent> OrderStatusChanged;
+        event EventHandler<BrokerageOrderIdChangedEvent> OrderIdChanged;
+
+        /// <summary>
+        /// Event that fires each time the status for a list of orders change
+        /// </summary>
+        event EventHandler<List<OrderEvent>> OrdersStatusChanged;
+
+        /// <summary>
+        /// Event that fires each time an order is updated in the brokerage side
+        /// </summary>
+        /// <remarks>
+        /// These are not status changes but mainly price changes, like the stop price of a trailing stop order
+        /// </remarks>
+        event EventHandler<OrderUpdateEvent> OrderUpdated;
 
         /// <summary>
         /// Event that fires each time a short option position is assigned
@@ -42,6 +55,11 @@ namespace QuantConnect.Interfaces
         /// Event that fires each time an option position has changed
         /// </summary>
         event EventHandler<OptionNotificationEventArgs> OptionNotification;
+
+        /// <summary>
+        /// Event that fires each time there's a brokerage side generated order
+        /// </summary>
+        event EventHandler<NewBrokerageOrderNotificationEventArgs> NewBrokerageOrderNotification;
 
         /// <summary>
         /// Event that fires each time a delisting occurs

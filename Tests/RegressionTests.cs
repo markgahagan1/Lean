@@ -56,7 +56,6 @@ namespace QuantConnect.Tests
             var algorithmManager = AlgorithmRunner.RunLocalBacktest(
                 parameters.Algorithm,
                 parameters.Statistics,
-                parameters.AlphaStatistics,
                 parameters.Language,
                 parameters.ExpectedFinalStatus
             ).AlgorithmManager;
@@ -86,13 +85,6 @@ namespace QuantConnect.Tests
             // since these are static test cases, they are executed before test setup
             AssemblyInitialize.AdjustCurrentDirectory();
 
-            var nonDefaultStatuses = new Dictionary<string, AlgorithmStatus>
-            {
-                { "TrainingInitializeRegressionAlgorithm", AlgorithmStatus.RuntimeError },
-                { "OnOrderEventExceptionRegression", AlgorithmStatus.RuntimeError },
-                { "WarmUpAfterInitializeRegression", AlgorithmStatus.RuntimeError }
-            };
-
             var languages = Config.GetValue("regression-test-languages", JArray.FromObject(new[] { "CSharp", "Python" }))
                 .Select(str => Parse.Enum<Language>(str.Value<string>()))
                 .ToHashSet();
@@ -104,10 +96,9 @@ namespace QuantConnect.Tests
                 where !type.IsAbstract                          // non-abstract
                 where type.GetConstructor(Array.Empty<Type>()) != null  // has default ctor
                 let instance = (IRegressionAlgorithmDefinition)Activator.CreateInstance(type)
-                let status = nonDefaultStatuses.GetValueOrDefault(type.Name, AlgorithmStatus.Completed)
                 where instance.CanRunLocally                   // open source has data to run this algorithm
                 from language in instance.Languages.Where(languages.Contains)
-                select new AlgorithmStatisticsTestParameters(type.Name, instance.ExpectedStatistics, language, status, instance.DataPoints, instance.AlgorithmHistoryDataPoints)
+                select new AlgorithmStatisticsTestParameters(type.Name, instance.ExpectedStatistics, language, instance.AlgorithmStatus, instance.DataPoints, instance.AlgorithmHistoryDataPoints)
             )
             .OrderBy(x => x.Language).ThenBy(x => x.Algorithm)
             // generate test cases from test parameters
@@ -117,13 +108,12 @@ namespace QuantConnect.Tests
 
         public class AlgorithmStatisticsTestParameters
         {
-            public readonly string Algorithm;
-            public readonly Dictionary<string, string> Statistics;
-            public readonly AlphaRuntimeStatistics AlphaStatistics;
-            public readonly Language Language;
-            public readonly AlgorithmStatus ExpectedFinalStatus;
-            public readonly long DataPoints;
-            public readonly int AlgorithmHistoryDataPoints;
+            public string Algorithm { get; init; }
+            public Dictionary<string, string> Statistics { get; init; }
+            public Language Language { get; init; }
+            public AlgorithmStatus ExpectedFinalStatus { get; init; }
+            public long DataPoints { get; init; }
+            public int AlgorithmHistoryDataPoints { get; init; }
 
             public AlgorithmStatisticsTestParameters(
                 string algorithm,

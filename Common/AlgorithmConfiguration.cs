@@ -13,9 +13,13 @@
  * limitations under the License.
 */
 
+using System;
 using Newtonsoft.Json;
+using QuantConnect.Util;
+using QuantConnect.Packets;
 using QuantConnect.Interfaces;
 using QuantConnect.Brokerages;
+using System.Collections.Generic;
 
 namespace QuantConnect
 {
@@ -26,33 +30,83 @@ namespace QuantConnect
     public class AlgorithmConfiguration
     {
         /// <summary>
+        /// The algorithm's name
+        /// </summary>
+        public string Name { get; set; }
+
+        /// <summary>
+        /// List of tags associated with the algorithm
+        /// </summary>
+        public ISet<string> Tags { get; set; }
+
+        /// <summary>
         /// The algorithm's account currency
         /// </summary>
-        [JsonProperty(PropertyName = "AccountCurrency", NullValueHandling = NullValueHandling.Ignore)]
-        public string AccountCurrency;
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string AccountCurrency { get; set; }
 
         /// <summary>
         /// The algorithm's brokerage model
         /// </summary>
         /// <remarks> Required to set the correct brokerage model on report generation.</remarks>
-        [JsonProperty(PropertyName = "Brokerage")]
-        public BrokerageName BrokerageName;
+        public BrokerageName Brokerage { get; set; }
 
         /// <summary>
         /// The algorithm's account type
         /// </summary>
         /// <remarks> Required to set the correct brokerage model on report generation.</remarks>
-        [JsonProperty(PropertyName = "AccountType")]
-        public AccountType AccountType;
+        public AccountType AccountType { get; set; }
+
+        /// <summary>
+        /// The parameters used by the algorithm
+        /// </summary>
+        public IReadOnlyDictionary<string, string> Parameters { get; set; }
+
+        /// <summary>
+        /// Backtest maximum end date
+        /// </summary>
+        public DateTime? OutOfSampleMaxEndDate { get; set; }
+
+        /// <summary>
+        /// The backtest out of sample day count
+        /// </summary>
+        public int OutOfSampleDays { get; set; }
+
+        /// <summary>
+        /// The backtest start date
+        /// </summary>
+        [JsonConverter(typeof(DateTimeJsonConverter), DateFormat.UI)]
+        public DateTime StartDate { get; set; }
+
+        /// <summary>
+        /// The backtest end date
+        /// </summary>
+        [JsonConverter(typeof(DateTimeJsonConverter), DateFormat.UI)]
+        public DateTime EndDate { get; set; }
+
+        /// <summary>
+        /// Number of trading days per year for Algorithm's portfolio statistics.
+        /// </summary>
+        public int TradingDaysPerYear { get; set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AlgorithmConfiguration"/> class
         /// </summary>
-        public AlgorithmConfiguration(string accountCurrency, BrokerageName brokerageName, AccountType accountType)
+        public AlgorithmConfiguration(string name, ISet<string> tags, string accountCurrency, BrokerageName brokerageName,
+            AccountType accountType, IReadOnlyDictionary<string, string> parameters, DateTime startDate, DateTime endDate,
+            DateTime? outOfSampleMaxEndDate, int outOfSampleDays = 0, int tradingDaysPerYear = 0)
         {
+            Name = name;
+            Tags = tags;
+            OutOfSampleMaxEndDate = outOfSampleMaxEndDate;
+            TradingDaysPerYear = tradingDaysPerYear;
+            OutOfSampleDays = outOfSampleDays;
             AccountCurrency = accountCurrency;
-            BrokerageName = brokerageName;
+            Brokerage = brokerageName;
             AccountType = accountType;
+            Parameters = parameters;
+            StartDate = startDate;
+            EndDate = endDate;
         }
 
         /// <summary>
@@ -60,19 +114,31 @@ namespace QuantConnect
         /// </summary>
         public AlgorithmConfiguration()
         {
+            // use default value for backwards compatibility
+            TradingDaysPerYear = 252;
         }
 
         /// <summary>
         /// Provides a convenience method for creating a <see cref="AlgorithmConfiguration"/> for a given algorithm.
         /// </summary>
         /// <param name="algorithm">Algorithm for which the configuration object is being created</param>
+        /// <param name="backtestNodePacket">The associated backtest node packet if any</param>
         /// <returns>A new AlgorithmConfiguration object for the specified algorithm</returns>
-        public static AlgorithmConfiguration Create(IAlgorithm algorithm)
+        public static AlgorithmConfiguration Create(IAlgorithm algorithm, BacktestNodePacket backtestNodePacket)
         {
             return new AlgorithmConfiguration(
+                algorithm.Name,
+                algorithm.Tags,
                 algorithm.AccountCurrency,
                 BrokerageModel.GetBrokerageName(algorithm.BrokerageModel),
-                algorithm.BrokerageModel.AccountType);
+                algorithm.BrokerageModel.AccountType,
+                algorithm.GetParameters(),
+                algorithm.StartDate,
+                algorithm.EndDate,
+                backtestNodePacket?.OutOfSampleMaxEndDate,
+                backtestNodePacket?.OutOfSampleDays ?? 0,
+                // use value = 252 like default for backwards compatibility
+                algorithm?.Settings?.TradingDaysPerYear ?? 252);
         }
     }
 }

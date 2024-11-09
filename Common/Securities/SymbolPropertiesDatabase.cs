@@ -13,12 +13,11 @@
  * limitations under the License.
 */
 
-using System;
+using QuantConnect.Util;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
-using QuantConnect.Logging;
 
 namespace QuantConnect.Securities
 {
@@ -30,8 +29,9 @@ namespace QuantConnect.Securities
         private static SymbolPropertiesDatabase _dataFolderSymbolPropertiesDatabase;
         private static readonly object DataFolderSymbolPropertiesDatabaseLock = new object();
 
-        private readonly Dictionary<SecurityDatabaseKey, SymbolProperties> _entries;
-        private readonly IReadOnlyDictionary<SecurityDatabaseKey, SecurityDatabaseKey> _keyBySecurityType;
+        private Dictionary<SecurityDatabaseKey, SymbolProperties> _entries;
+        private readonly Dictionary<SecurityDatabaseKey, SymbolProperties> _customEntries;
+        private IReadOnlyDictionary<SecurityDatabaseKey, SecurityDatabaseKey> _keyBySecurityType;
 
         /// <summary>
         /// Initialize a new instance of <see cref="SymbolPropertiesDatabase"/> using the given file
@@ -46,7 +46,7 @@ namespace QuantConnect.Securities
             {
                 if (allEntries.ContainsKey(keyValuePair.Key))
                 {
-                    throw new DuplicateNameException($"Encountered duplicate key while processing file: {file}. Key: {keyValuePair.Key}");
+                    throw new DuplicateNameException(Messages.SymbolPropertiesDatabase.DuplicateKeyInFile(file, keyValuePair.Key));
                 }
                 // we wildcard the market, so per security type and symbol we will keep the *first* instance
                 // this allows us to fetch deterministically, in O(1), an entry without knowing the market, see 'TryGetMarket()'
@@ -59,6 +59,7 @@ namespace QuantConnect.Securities
             }
 
             _entries = allEntries;
+            _customEntries = new();
             _keyBySecurityType = entriesBySecurityType;
         }
 
@@ -200,7 +201,11 @@ namespace QuantConnect.Securities
         public bool SetEntry(string market, string symbol, SecurityType securityType, SymbolProperties properties)
         {
             var key = new SecurityDatabaseKey(market, symbol, securityType);
-            _entries[key] = properties;
+            lock (DataFolderSymbolPropertiesDatabaseLock)
+            {
+                _entries[key] = properties;
+                _customEntries[key] = properties;
+            }
             return true;
         }
 
@@ -215,8 +220,7 @@ namespace QuantConnect.Securities
             {
                 if (_dataFolderSymbolPropertiesDatabase == null)
                 {
-                    var directory = Path.Combine(Globals.DataFolder, "symbol-properties");
-                    _dataFolderSymbolPropertiesDatabase = new SymbolPropertiesDatabase(Path.Combine(directory, "symbol-properties-database.csv"));
+                    _dataFolderSymbolPropertiesDatabase = new SymbolPropertiesDatabase(Path.Combine(Globals.GetDataFolderPath("symbol-properties"), "symbol-properties-database.csv"));
                 }
             }
             return _dataFolderSymbolPropertiesDatabase;
@@ -231,7 +235,7 @@ namespace QuantConnect.Securities
         {
             if (!File.Exists(file))
             {
-                throw new FileNotFoundException("Unable to locate symbol properties file: " + file);
+                throw new FileNotFoundException(Messages.SymbolPropertiesDatabase.DatabaseFileNotFound(file));
             }
 
             // skip the first header line, also skip #'s as these are comment lines
@@ -278,12 +282,29 @@ namespace QuantConnect.Securities
                 lotSize: csv[7].ToDecimal(),
                 marketTicker: HasValidValue(csv, 8) ? csv[8] : string.Empty,
                 minimumOrderSize: HasValidValue(csv, 9) ? csv[9].ToDecimal() : null,
-                priceMagnifier: HasValidValue(csv, 10) ? csv[10].ToDecimal() : 1);
+                priceMagnifier: HasValidValue(csv, 10) ? csv[10].ToDecimal() : 1,
+                strikeMultiplier: HasValidValue(csv, 11) ? csv[11].ToDecimal() : 1);
         }
 
         private static bool HasValidValue(string[] array, uint position)
         {
             return array.Length > position && !string.IsNullOrEmpty(array[position]);
+        }
+
+        /// <summary>
+        /// Reload entries dictionary from SPDB file and merge them with previous custom ones
+        /// </summary>
+        internal void ReloadEntries()
+        {
+            lock (DataFolderSymbolPropertiesDatabaseLock)
+            {
+                _dataFolderSymbolPropertiesDatabase = null;
+                var newInstance = FromDataFolder();
+                var fileEntries = newInstance._entries.Where(x => !_customEntries.ContainsKey(x.Key));
+                var newEntries = fileEntries.Concat(_customEntries).ToDictionary();
+                _entries = newEntries;
+                _keyBySecurityType = newInstance._keyBySecurityType.ToReadOnlyDictionary();
+            }
         }
     }
 }

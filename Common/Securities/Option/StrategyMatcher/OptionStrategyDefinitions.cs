@@ -33,28 +33,126 @@ namespace QuantConnect.Securities.Option.StrategyMatcher
                 typeof(OptionStrategyDefinitions)
                     .GetProperties(BindingFlags.Public | BindingFlags.Static)
                     .Where(property => property.PropertyType == typeof(OptionStrategyDefinition))
-                    .Select(property => (OptionStrategyDefinition) property.GetValue(null))
+                    .Select(property => (OptionStrategyDefinition)property.GetValue(null))
                     .ToImmutableList()
             );
 
         /// <summary>
         /// Collection of all OptionStrategyDefinitions
         /// </summary>
-        public static ImmutableList<OptionStrategyDefinition> AllDefinitions => All.Value;
+        public static ImmutableList<OptionStrategyDefinition> AllDefinitions
+        {
+            get
+            {
+                var strategies = All.Value;
+
+                return strategies
+                    .SelectMany(optionStrategy => {
+                        // when selling the strategy can get reverted and it's still valid, we need the definition to match against
+                        var inverted = new OptionStrategyDefinition(optionStrategy.Name, optionStrategy.UnderlyingLots * -1,
+                            optionStrategy.Legs.Select(leg => new OptionStrategyLegDefinition(leg.Right, leg.Quantity * -1, leg)));
+
+                        if (strategies.Any(strategy => strategy.UnderlyingLots == inverted.UnderlyingLots
+                            && strategy.Legs.Count == inverted.Legs.Count
+                            && strategy.Legs.All(leg => inverted.Legs.
+                                Any(invertedLeg => invertedLeg.Right == leg.Right
+                                    && leg.Quantity == invertedLeg.Quantity
+                                    && leg.All(predicate => invertedLeg.Any(invertedPredicate => invertedPredicate.ToString() == predicate.ToString()))))))
+                        {
+                            // some strategies inverted have a different name we already know, let's skip those
+                            return new[] { optionStrategy };
+                        }
+                        return new[] { optionStrategy, inverted };
+                    })
+                    .ToImmutableList();
+            }
+        }
 
         /// <summary>
         /// Hold 1 lot of the underlying and sell 1 call contract
         /// </summary>
+        /// <remarks>Inverse of the <see cref="ProtectiveCall"/></remarks>
         public static OptionStrategyDefinition CoveredCall { get; }
             = OptionStrategyDefinition.Create("Covered Call", 1,
                 OptionStrategyDefinition.CallLeg(-1)
             );
 
         /// <summary>
+        /// Hold -1 lot of the underlying and buy 1 call contract
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="CoveredCall"/></remarks>
+        public static OptionStrategyDefinition ProtectiveCall { get; }
+            = OptionStrategyDefinition.Create("Protective Call", -1,
+                OptionStrategyDefinition.CallLeg(1)
+            );
+
+        /// <summary>
         /// Hold -1 lot of the underlying and sell 1 put contract
         /// </summary>
+        /// <remarks>Inverse of the <see cref="ProtectivePut"/></remarks>
         public static OptionStrategyDefinition CoveredPut { get; }
             = OptionStrategyDefinition.Create("Covered Put", -1,
+                OptionStrategyDefinition.PutLeg(-1)
+            );
+
+        /// <summary>
+        /// Hold 1 lot of the underlying and buy 1 put contract
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="CoveredPut"/></remarks>
+        public static OptionStrategyDefinition ProtectivePut { get; }
+            = OptionStrategyDefinition.Create("Protective Put", 1,
+                OptionStrategyDefinition.PutLeg(1)
+            );
+
+        /// <summary>
+        /// Hold 1 lot of the underlying, sell 1 call contract and buy 1 put contract.
+        /// The strike price of the short call is below the strike of the long put with the same expiration.
+        /// </summary>
+        /// <remarks>Combination of <see cref="CoveredCall"/> and <see cref="ProtectivePut"/></remarks>
+        public static OptionStrategyDefinition ProtectiveCollar { get; }
+            = OptionStrategyDefinition.Create("Protective Collar", 1,
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.PutLeg(1, (legs, p) => p.Strike < legs[0].Strike,
+                                                   (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Hold 1 lot of the underlying, sell 1 call contract and buy 1 put contract.
+        /// The strike price of the call and put are the same, with the same expiration.
+        /// </summary>
+        /// <remarks>A special case of <see cref="ProtectiveCollar"/></remarks>
+        public static OptionStrategyDefinition Conversion { get; }
+            = OptionStrategyDefinition.Create("Conversion", 1,
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.PutLeg(1, (legs, p) => p.Strike == legs[0].Strike,
+                                                   (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Hold 1 lot of the underlying, sell 1 call contract and buy 1 put contract.
+        /// The strike price of the call and put are the same, with the same expiration.
+        /// </summary>
+        /// <remarks>Inverse of <see cref="Conversion"/></remarks>
+        public static OptionStrategyDefinition ReverseConversion { get; }
+            = OptionStrategyDefinition.Create("Reverse Conversion", -1,
+                OptionStrategyDefinition.CallLeg(1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                   (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Sell 1 call contract without holding the underlying
+        /// </summary>
+        public static OptionStrategyDefinition NakedCall { get; }
+            = OptionStrategyDefinition.Create("Naked Call",
+                OptionStrategyDefinition.CallLeg(-1)
+            );
+
+        /// <summary>
+        /// Sell 1 put contract without holding the underlying
+        /// </summary>
+        public static OptionStrategyDefinition NakedPut { get; }
+            = OptionStrategyDefinition.Create("Naked Put",
                 OptionStrategyDefinition.PutLeg(-1)
             );
 
@@ -115,13 +213,37 @@ namespace QuantConnect.Securities.Option.StrategyMatcher
             );
 
         /// <summary>
+        /// Short Straddle strategy is a combination of selling a call and selling a put, both with the same strike price
+        /// and expiration.
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="Straddle"/></remarks>
+        public static OptionStrategyDefinition ShortStraddle { get; }
+            = OptionStrategyDefinition.Create("Short Straddle",
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
         /// Strangle strategy consists of buying a call option and a put option with the same expiration date.
         /// The strike price of the call is above the strike of the put.
         /// </summary>
         public static OptionStrategyDefinition Strangle { get; }
             = OptionStrategyDefinition.Create("Strangle",
                 OptionStrategyDefinition.CallLeg(+1),
-                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike <= legs[0].Strike,
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike < legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Strangle strategy consists of selling a call option and a put option with the same expiration date.
+        /// The strike price of the call is above the strike of the put.
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="Strangle"/></remarks>
+        public static OptionStrategyDefinition ShortStrangle { get; }
+            = OptionStrategyDefinition.Create("Short Strangle",
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike < legs[0].Strike,
                                                     (legs, p) => p.Expiration == legs[0].Expiration)
             );
 
@@ -194,6 +316,18 @@ namespace QuantConnect.Securities.Option.StrategyMatcher
             );
 
         /// <summary>
+        /// Short Call Calendar Spread strategy is long one call option and short a second call option with a more distant
+        /// expiration.
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="CallCalendarSpread"/></remarks>
+        public static OptionStrategyDefinition ShortCallCalendarSpread { get; }
+            = OptionStrategyDefinition.Create("Short Call Calendar Spread",
+                OptionStrategyDefinition.CallLeg(+1),
+                OptionStrategyDefinition.CallLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                     (legs, p) => p.Expiration > legs[0].Expiration)
+            );
+
+        /// <summary>
         /// Put Calendar Spread strategy is a short one put option and long a second put option with a more distant
         /// expiration.
         /// </summary>
@@ -202,6 +336,48 @@ namespace QuantConnect.Securities.Option.StrategyMatcher
                 OptionStrategyDefinition.PutLeg(-1),
                 OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike == legs[0].Strike,
                                                     (legs, p) => p.Expiration > legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Short Put Calendar Spread strategy is long one put option and short a second put option with a more distant
+        /// expiration.
+        /// </summary>
+        /// <remarks>Inverse of the <see cref="PutCalendarSpread"/></remarks>
+        public static OptionStrategyDefinition ShortPutCalendarSpread { get; }
+            = OptionStrategyDefinition.Create("Short Put Calendar Spread",
+                OptionStrategyDefinition.PutLeg(+1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration > legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Iron Butterfly strategy consists of a short ATM call, a short ATM put, a long OTM call, and a long OTM put.
+        /// The strike spread between ATM and OTM call and put are the same. All at the same expiration date.
+        /// </summary>
+        public static OptionStrategyDefinition IronButterfly { get; }
+            = OptionStrategyDefinition.Create("Iron Butterfly",
+                OptionStrategyDefinition.PutLeg(-1),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike < legs[0].Strike,
+                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike == legs[0].Strike,
+                    (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike == legs[0].Strike * 2 - legs[1].Strike,
+                    (legs, c) => c.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Short Iron Butterfly strategy consists of a long ATM call, a long ATM put, a short OTM call, and a short OTM put.
+        /// The strike spread between ATM and OTM call and put are the same. All at the same expiration date.
+        /// </summary>
+        public static OptionStrategyDefinition ShortIronButterfly { get; }
+            = OptionStrategyDefinition.Create("Short Iron Butterfly",
+                OptionStrategyDefinition.PutLeg(+1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike < legs[0].Strike,
+                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike == legs[0].Strike,
+                    (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike == legs[0].Strike * 2 - legs[1].Strike,
+                    (legs, c) => c.Expiration == legs[0].Expiration)
             );
 
         /// <summary>
@@ -217,6 +393,135 @@ namespace QuantConnect.Securities.Option.StrategyMatcher
                     (legs, p) => p.Expiration == legs[0].Expiration),
                 OptionStrategyDefinition.CallLeg(1, (legs, p) => p.Strike > legs[2].Strike,
                     (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Short Iron Condor strategy is selling a put, buying a put with a higher strike price, buying a call and selling a call with a higher strike price.
+        /// All at the same expiration date
+        /// </summary>
+        public static OptionStrategyDefinition ShortIronCondor { get; }
+            = OptionStrategyDefinition.Create("Short Iron Condor",
+                OptionStrategyDefinition.PutLeg(-1),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike > legs[0].Strike,
+                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, p) => p.Strike > legs[1].Strike,
+                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, p) => p.Strike > legs[2].Strike,
+                    (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Long Box Spread strategy is long 1 call and short 1 put with the same strike,
+        /// while short 1 call and long 1 put with a higher, same strike. All options have the same expiry.
+        /// expiration.
+        /// </summary>
+        public static OptionStrategyDefinition BoxSpread { get; }
+            = OptionStrategyDefinition.Create("Box Spread",
+                OptionStrategyDefinition.PutLeg(+1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike < legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike == legs[1].Strike,
+                                                    (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike == legs[0].Strike,
+                                                    (legs, c) => c.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Short Box Spread strategy is short 1 call and long 1 put with the same strike,
+        /// while long 1 call and short 1 put with a higher, same strike. All options have the same expiry.
+        /// expiration.
+        /// </summary>
+        public static OptionStrategyDefinition ShortBoxSpread { get; }
+            = OptionStrategyDefinition.Create("Short Box Spread",
+                OptionStrategyDefinition.PutLeg(-1),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike < legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike == legs[1].Strike,
+                                                    (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike == legs[0].Strike,
+                                                    (legs, c) => c.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Jelly Roll is short 1 call and long 1 call with the same strike but further expiry, together with
+        /// long 1 put and short 1 put with the same strike and expiries as calls.
+        /// </summary>
+        public static OptionStrategyDefinition JellyRoll { get; }
+            = OptionStrategyDefinition.Create("Jelly Roll",
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike == legs[0].Strike,
+                                                     (legs, c) => c.Expiration > legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[1].Expiration)
+            );
+
+        /// <summary>
+        /// Short Jelly Roll is long 1 call and short 1 call with the same strike but further expiry, together with
+        /// short 1 put and long 1 put with the same strike and expiries as calls.
+        /// </summary>
+        public static OptionStrategyDefinition ShortJellyRoll { get; }
+            = OptionStrategyDefinition.Create("Short Jelly Roll",
+                OptionStrategyDefinition.CallLeg(+1),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike == legs[0].Strike,
+                                                     (legs, c) => c.Expiration > legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike == legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[1].Expiration)
+            );
+
+        /// <summary>
+        /// Bear Call Ladder strategy is short 1 call and long 2 calls, with ascending strike prices in order,
+        /// All options have the same expiry.
+        /// </summary>
+        public static OptionStrategyDefinition BearCallLadder { get; }
+            = OptionStrategyDefinition.Create("Bear Call Ladder",
+                OptionStrategyDefinition.CallLeg(-1),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike > legs[0].Strike,
+                                                     (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(+1, (legs, c) => c.Strike > legs[1].Strike,
+                                                     (legs, c) => c.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Bear Put Ladder strategy is long 1 put and short 2 puts, with descending strike prices in order,
+        /// All options have the same expiry.
+        /// </summary>
+        public static OptionStrategyDefinition BearPutLadder { get; }
+            = OptionStrategyDefinition.Create("Bear Put Ladder",
+                OptionStrategyDefinition.PutLeg(+1),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike < legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(-1, (legs, p) => p.Strike < legs[1].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Bull Call Ladder strategy is long 1 call and short 2 calls, with ascending strike prices in order,
+        /// All options have the same expiry.
+        /// </summary>
+        public static OptionStrategyDefinition BullCallLadder { get; }
+            = OptionStrategyDefinition.Create("Bull Call Ladder",
+                OptionStrategyDefinition.CallLeg(+1),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike > legs[0].Strike,
+                                                     (legs, c) => c.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.CallLeg(-1, (legs, c) => c.Strike > legs[1].Strike,
+                                                     (legs, c) => c.Expiration == legs[0].Expiration)
+            );
+
+        /// <summary>
+        /// Bull Put Ladder strategy is short 1 put and long 2 puts, with descending strike prices in order,
+        /// All options have the same expiry.
+        /// </summary>
+        public static OptionStrategyDefinition BullPutLadder { get; }
+            = OptionStrategyDefinition.Create("Bull Put Ladder",
+                OptionStrategyDefinition.PutLeg(-1),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike < legs[0].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration),
+                OptionStrategyDefinition.PutLeg(+1, (legs, p) => p.Strike < legs[1].Strike,
+                                                    (legs, p) => p.Expiration == legs[0].Expiration)
             );
     }
 }

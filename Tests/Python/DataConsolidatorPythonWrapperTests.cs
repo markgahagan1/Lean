@@ -17,8 +17,13 @@ using System;
 using NUnit.Framework;
 using Python.Runtime;
 using System.Collections.Generic;
+using System.Linq;
+using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
 using QuantConnect.Python;
+using QuantConnect.Algorithm;
+using QuantConnect.Tests.Engine.DataFeeds;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Tests.Python
 {
@@ -32,18 +37,20 @@ namespace QuantConnect.Tests.Python
             {
                 var module = PyModule.FromString(Guid.NewGuid().ToString(),
                     "from AlgorithmImports import *\n" +
-                    "class CustomConsolidator():\n" +
+                    "class CustomConsolidator(PythonConsolidator):\n" +
                     "   def __init__(self):\n" +
-                    "       self.UpdateWasCalled = False\n" +
-                    "       self.InputType = QuoteBar\n" +
-                    "       self.OutputType = QuoteBar\n" +
-                    "       self.Consolidated = None\n" +
-                    "       self.WorkingData = None\n" +
-                    "   def Update(self, data):\n" +
-                    "       self.UpdateWasCalled = True\n");
+                    "       self.update_was_called = False\n" +
+                    "       self.input_type = QuoteBar\n" +
+                    "       self.output_type = QuoteBar\n" +
+                    "       self.consolidated = None\n" +
+                    "       self.working_data = None\n" +
+                    "   def update(self, data):\n" +
+                    "       self.update_was_called = True\n" +
+                    "   def scan(self, time):\n" +
+                    "       pass\n");
 
                 var customConsolidator = module.GetAttr("CustomConsolidator").Invoke();
-                var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
+                using var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
 
                 var time = DateTime.Today;
                 var period = TimeSpan.FromMinutes(1);
@@ -62,7 +69,7 @@ namespace QuantConnect.Tests.Python
                 wrapper.Update(bar1);
 
                 bool called;
-                customConsolidator.GetAttr("UpdateWasCalled").TryConvert(out called);
+                customConsolidator.GetAttr("update_was_called").TryConvert(out called);
                 Assert.True(called);
             }
         }
@@ -74,18 +81,20 @@ namespace QuantConnect.Tests.Python
             {
                 var module = PyModule.FromString(Guid.NewGuid().ToString(),
                     "from AlgorithmImports import *\n" +
-                    "class CustomConsolidator():\n" +
+                    "class CustomConsolidator(PythonConsolidator):\n" +
                     "   def __init__(self):\n" +
-                    "       self.ScanWasCalled = False\n" +
-                    "       self.InputType = QuoteBar\n" +
-                    "       self.OutputType = QuoteBar\n" +
-                    "       self.Consolidated = None\n" +
-                    "       self.WorkingData = None\n" +
-                    "   def Scan(self,time):\n" +
-                    "       self.ScanWasCalled = True\n");
+                    "       self.scan_was_called = False\n" +
+                    "       self.input_type = QuoteBar\n" +
+                    "       self.output_type = QuoteBar\n" +
+                    "       self.consolidated = None\n" +
+                    "       self.working_data = None\n" +
+                    "   def update(self, data):\n" +
+                    "       pass\n" +
+                    "   def scan(self, time):\n" +
+                    "       self.scan_was_called = True\n");
 
                 var customConsolidator = module.GetAttr("CustomConsolidator").Invoke();
-                var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
+                using var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
 
                 var time = DateTime.Today;
                 var period = TimeSpan.FromMinutes(1);
@@ -93,7 +102,7 @@ namespace QuantConnect.Tests.Python
                 wrapper.Scan(DateTime.Now);
 
                 bool called;
-                customConsolidator.GetAttr("ScanWasCalled").TryConvert(out called);
+                customConsolidator.GetAttr("scan_was_called").TryConvert(out called);
                 Assert.True(called);
             }
         }
@@ -105,15 +114,19 @@ namespace QuantConnect.Tests.Python
             {
                 var module = PyModule.FromString(Guid.NewGuid().ToString(),
                     "from AlgorithmImports import *\n" +
-                    "class CustomConsolidator():\n" +
+                    "class CustomConsolidator(PythonConsolidator):\n" +
                     "   def __init__(self):\n" +
-                    "       self.InputType = QuoteBar\n" +
-                    "       self.OutputType = QuoteBar\n" +
-                    "       self.Consolidated = None\n" +
-                    "       self.WorkingData = None\n");
+                    "       self.input_type = QuoteBar\n" +
+                    "       self.output_type = QuoteBar\n" +
+                    "       self.consolidated = None\n" +
+                    "       self.working_data = None\n" +
+                    "   def update(self, data):\n" +
+                    "       pass\n" +
+                    "   def scan(self, time):\n" +
+                    "       pass\n");
 
                 var customConsolidator = module.GetAttr("CustomConsolidator").Invoke();
-                var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
+                using var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
 
                 var time = DateTime.Today;
                 var period = TimeSpan.FromMinutes(1);
@@ -130,15 +143,19 @@ namespace QuantConnect.Tests.Python
             {
                 var module = PyModule.FromString(Guid.NewGuid().ToString(),
                     "from AlgorithmImports import *\n" +
-                    "class CustomConsolidator():\n" +
+                    "class CustomConsolidator(PythonConsolidator):\n" +
                     "   def __init__(self):\n" +
-                    "       self.InputType = QuoteBar\n" +
-                    "       self.OutputType = QuoteBar\n" +
-                    "       self.Consolidated = None\n" +
-                    "       self.WorkingData = None\n");
+                    "       self.input_type = QuoteBar\n" +
+                    "       self.output_type = QuoteBar\n" +
+                    "       self.consolidated = None\n" +
+                    "       self.working_data = None\n" +
+                    "   def update(self, data):\n" +
+                    "       pass\n" +
+                    "   def scan(self, time):\n" +
+                    "       pass\n");
 
                 var customConsolidator = module.GetAttr("CustomConsolidator").Invoke();
-                var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
+                using var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
 
                 var time = DateTime.Today;
                 var period = TimeSpan.FromMinutes(1);
@@ -153,33 +170,32 @@ namespace QuantConnect.Tests.Python
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("CustomConsolidatorRegressionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "49"},
-                    {"Average Win", "0.25%"},
-                    {"Average Loss", "-0.01%"},
-                    {"Compounding Annual Return", "65.750%"},
-                    {"Drawdown", "0.300%"},
-                    {"Expectancy", "2.577"},
-                    {"Net Profit", "1.067%"},
-                    {"Sharpe Ratio", "6.873"},
-                    {"Probabilistic Sharpe Ratio", "89.382%"},
-                    {"Loss Rate", "80%"},
-                    {"Win Rate", "20%"},
-                    {"Profit-Loss Ratio", "16.88"},
-                    {"Alpha", "0.34"},
-                    {"Beta", "0.351"},
-                    {"Annual Standard Deviation", "0.068"},
+                    {PerformanceMetrics.TotalOrders, "15"},
+                    {"Average Win", "0.42%"},
+                    {"Average Loss", "-0.03%"},
+                    {"Compounding Annual Return", "76.673%"},
+                    {"Drawdown", "0.200%"},
+                    {"Expectancy", "4.239"},
+                    {"Net Profit", "1.203%"},
+                    {"Sharpe Ratio", "7.908"},
+                    {"Probabilistic Sharpe Ratio", "95.063%"},
+                    {"Loss Rate", "62%"},
+                    {"Win Rate", "38%"},
+                    {"Profit-Loss Ratio", "12.97"},
+                    {"Alpha", "0.408"},
+                    {"Beta", "0.35"},
+                    {"Annual Standard Deviation", "0.067"},
                     {"Annual Variance", "0.005"},
-                    {"Information Ratio", "0.865"},
-                    {"Tracking Error", "0.118"},
-                    {"Treynor Ratio", "1.336"},
-                    {"Total Fees", "$69.81"}
+                    {"Information Ratio", "1.484"},
+                    {"Tracking Error", "0.117"},
+                    {"Treynor Ratio", "1.526"},
+                    {"Total Fees", "$24.34"}
                 },
                 Language.Python,
                 AlgorithmStatus.Completed);
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus);
         }
@@ -205,7 +221,7 @@ namespace QuantConnect.Tests.Python
 
                 var implementingClass = module.GetAttr("ImplementingClass").Invoke();
                 var customConsolidator = implementingClass.GetAttr("Consolidator");
-                var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
+                using var wrapper = new DataConsolidatorPythonWrapper(customConsolidator);
 
                 bool called;
                 implementingClass.GetAttr("EventCalled").TryConvert(out called);
@@ -231,5 +247,38 @@ namespace QuantConnect.Tests.Python
                 Assert.True(called);
             }
         }
+
+        [Test]
+        public void SubscriptionManagedDoesNotWrapCSharpConsolidators()
+        {
+            //Setup algorithm and Equity
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            var spy = algorithm.AddEquity("SPY").Symbol;
+
+            using (Py.GIL())
+            {
+                var module = PyModule.FromString(Guid.NewGuid().ToString(),
+                    "from AlgorithmImports import *\n" +
+                    "consolidator = QuoteBarConsolidator(timedelta(5))");
+
+                var pyConsolidator = module.GetAttr("consolidator");
+
+                algorithm.SubscriptionManager.AddConsolidator(spy, pyConsolidator);
+
+                pyConsolidator.TryConvert(out IDataConsolidator consolidator);
+                algorithm.SubscriptionManager.RemoveConsolidator(spy, consolidator);
+
+                var count = algorithm.SubscriptionManager
+                    .SubscriptionDataConfigService
+                    .GetSubscriptionDataConfigs(spy)
+                    .Sum(x => x.Consolidators.Count);
+
+                Assert.AreEqual(0, count);
+                consolidator.Dispose();
+            }
+
+        }
+
     }
 }

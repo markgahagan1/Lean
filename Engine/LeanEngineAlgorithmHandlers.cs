@@ -17,9 +17,10 @@
 using System;
 using System.ComponentModel.Composition;
 using QuantConnect.Configuration;
+using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
-using QuantConnect.Lean.Engine.Alpha;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.RealTime;
 using QuantConnect.Lean.Engine.Results;
@@ -81,11 +82,6 @@ namespace QuantConnect.Lean.Engine
         public IDataCacheProvider DataCacheProvider { get; }
 
         /// <summary>
-        /// Gets the alpha handler used to process algorithm generated insights
-        /// </summary>
-        public IAlphaHandler Alphas { get; }
-
-        /// <summary>
         /// Gets the object store used for persistence
         /// </summary>
         public IObjectStore ObjectStore { get; }
@@ -94,6 +90,11 @@ namespace QuantConnect.Lean.Engine
         /// Entity in charge of handling data permissions
         /// </summary>
         public IDataPermissionManager DataPermissionsManager { get; }
+
+        /// <summary>
+        /// Monitors data requests and reports on missing data
+        /// </summary>
+        public IDataMonitor DataMonitor { get; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LeanEngineAlgorithmHandlers"/> class from the specified handlers
@@ -106,10 +107,10 @@ namespace QuantConnect.Lean.Engine
         /// <param name="mapFileProvider">The map file provider used to retrieve map files for the data feed</param>
         /// <param name="factorFileProvider">Map file provider used as a map file source for the data feed</param>
         /// <param name="dataProvider">file provider used to retrieve security data if it is not on the file system</param>
-        /// <param name="alphas">The alpha handler used to process generated insights</param>
         /// <param name="objectStore">The object store used for persistence</param>
         /// <param name="dataPermissionsManager">The data permission manager to use</param>
         /// <param name="liveMode">True for live mode, false otherwise</param>
+        /// <param name="researchMode">True for research mode, false otherwise. This has less priority than liveMode</param>
         public LeanEngineAlgorithmHandlers(IResultHandler results,
             ISetupHandler setup,
             IDataFeed dataFeed,
@@ -118,10 +119,10 @@ namespace QuantConnect.Lean.Engine
             IMapFileProvider mapFileProvider,
             IFactorFileProvider factorFileProvider,
             IDataProvider dataProvider,
-            IAlphaHandler alphas,
             IObjectStore objectStore,
             IDataPermissionManager dataPermissionsManager,
-            bool liveMode
+            bool liveMode,
+            bool researchMode = false
             )
         {
             if (results == null)
@@ -156,10 +157,6 @@ namespace QuantConnect.Lean.Engine
             {
                 throw new ArgumentNullException(nameof(dataProvider));
             }
-            if (alphas == null)
-            {
-                throw new ArgumentNullException(nameof(alphas));
-            }
             if (objectStore == null)
             {
                 throw new ArgumentNullException(nameof(objectStore));
@@ -177,19 +174,25 @@ namespace QuantConnect.Lean.Engine
             MapFileProvider = mapFileProvider;
             FactorFileProvider = factorFileProvider;
             DataProvider = dataProvider;
-            Alphas = alphas;
             ObjectStore = objectStore;
             DataPermissionsManager = dataPermissionsManager;
             DataCacheProvider = new ZipDataCacheProvider(DataProvider, isDataEphemeral: liveMode);
+            DataMonitor = new DataMonitor();
+
+            if (!liveMode && !researchMode)
+            {
+                DataProvider.NewDataRequest += DataMonitor.OnNewDataRequest;
+            }
         }
 
         /// <summary>
         /// Creates a new instance of the <see cref="LeanEngineAlgorithmHandlers"/> class from the specified composer using type names from configuration
         /// </summary>
         /// <param name="composer">The composer instance to obtain implementations from</param>
+        /// <param name="researchMode">True for research mode, false otherwise</param>
         /// <returns>A fully hydrates <see cref="LeanEngineSystemHandlers"/> instance.</returns>
         /// <exception cref="CompositionException">Throws a CompositionException during failure to load</exception>
-        public static LeanEngineAlgorithmHandlers FromConfiguration(Composer composer)
+        public static LeanEngineAlgorithmHandlers FromConfiguration(Composer composer, bool researchMode = false)
         {
             var setupHandlerTypeName = Config.Get("setup-handler", "ConsoleSetupHandler");
             var transactionHandlerTypeName = Config.Get("transaction-handler", "BacktestingTransactionHandler");
@@ -199,7 +202,6 @@ namespace QuantConnect.Lean.Engine
             var mapFileProviderTypeName = Config.Get("map-file-provider", "LocalDiskMapFileProvider");
             var factorFileProviderTypeName = Config.Get("factor-file-provider", "LocalDiskFactorFileProvider");
             var dataProviderTypeName = Config.Get("data-provider", "DefaultDataProvider");
-            var alphaHandlerTypeName = Config.Get("alpha-handler", "DefaultAlphaHandler");
             var objectStoreTypeName = Config.Get("object-store", "LocalObjectStore");
             var dataPermissionManager = Config.Get("data-permission-manager", "DataPermissionManager");
 
@@ -212,10 +214,10 @@ namespace QuantConnect.Lean.Engine
                 composer.GetExportedValueByTypeName<IMapFileProvider>(mapFileProviderTypeName),
                 composer.GetExportedValueByTypeName<IFactorFileProvider>(factorFileProviderTypeName),
                 composer.GetExportedValueByTypeName<IDataProvider>(dataProviderTypeName),
-                composer.GetExportedValueByTypeName<IAlphaHandler>(alphaHandlerTypeName),
                 composer.GetExportedValueByTypeName<IObjectStore>(objectStoreTypeName),
                 composer.GetExportedValueByTypeName<IDataPermissionManager>(dataPermissionManager),
-                Config.GetBool("live-mode")
+                Globals.LiveMode,
+                researchMode
                 );
 
             result.FactorFileProvider.Initialize(result.MapFileProvider, result.DataProvider);
@@ -227,6 +229,8 @@ namespace QuantConnect.Lean.Engine
                 throw new ArgumentException($"The {typeof(ApiDataProvider)} can only be used with {typeof(LocalZipFactorFileProvider)}" +
                     $" and {typeof(LocalZipMapFileProvider)}, please update 'config.json'");
             }
+
+            FundamentalService.Initialize(result.DataProvider, Globals.LiveMode);
 
             return result;
         }
@@ -242,6 +246,7 @@ namespace QuantConnect.Lean.Engine
             DataCacheProvider.DisposeSafely();
             Setup.DisposeSafely();
             ObjectStore.DisposeSafely();
+            DataMonitor.DisposeSafely();
 
             Log.Trace("LeanEngineAlgorithmHandlers.Dispose(): Disposed of algorithm handlers.");
         }

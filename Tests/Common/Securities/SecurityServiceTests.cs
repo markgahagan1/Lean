@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -39,7 +39,7 @@ namespace QuantConnect.Tests.Common.Securities
         public void Setup()
         {
             SymbolCache.Clear();
-            _subscriptionManager = new SubscriptionManager();
+            _subscriptionManager = new SubscriptionManager(NullTimeKeeper.Instance);
             var dataManager = new DataManagerStub();
             _subscriptionManager.SetDataManager(dataManager);
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
@@ -48,7 +48,7 @@ namespace QuantConnect.Tests.Common.Securities
 
         [TestCase("EURUSD", SecurityType.Forex, Market.FXCM)]
         [TestCase("EURUSD", SecurityType.Forex, Market.Oanda)]
-        [TestCase("BTCUSD", SecurityType.Crypto, Market.GDAX)]
+        [TestCase("BTCUSD", SecurityType.Crypto, Market.Coinbase)]
         public void CanCreate_ForexOrCrypto_WithCorrectSubscriptions(string ticker, SecurityType type, string market)
         {
             var symbol = Symbol.Create(ticker, type, market);
@@ -119,7 +119,7 @@ namespace QuantConnect.Tests.Common.Securities
         [Test]
         public void ThrowOnCreateCryptoNotDescribedInCSV()
         {
-            var symbol = Symbol.Create("ABCDEFG", SecurityType.Crypto, Market.GDAX);
+            var symbol = Symbol.Create("ABCDEFG", SecurityType.Crypto, Market.Coinbase);
 
             Assert.Throws<ArgumentException>(() =>
             {
@@ -131,9 +131,8 @@ namespace QuantConnect.Tests.Common.Securities
         [Test]
         public void CanCreate_ConcreteOptions_WithCorrectSubscriptions()
         {
-            var underlying = SecurityIdentifier.GenerateEquity(new DateTime(1998, 01, 02), "SPY", Market.USA);
-            var optionIdentifier = SecurityIdentifier.GenerateOption(new DateTime(2015, 09, 18), underlying, Market.USA, 195.50m, OptionRight.Put, OptionStyle.European);
-            var optionSymbol = new Symbol(optionIdentifier, "SPY", Symbol.Empty);
+            var optionSymbol = Symbol.CreateOption(Symbols.SPY, Market.USA, OptionStyle.European, OptionRight.Put, 195.50m,
+                new DateTime(2015, 09, 18));
 
             var subscriptionTypes = new List<Tuple<Type, TickType>>
             {
@@ -175,6 +174,22 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.IsTrue(security.Subscriptions.Any(x => x.TickType == TickType.OpenInterest && x.Type == typeof(OpenInterest)));
             Assert.IsTrue(security.Subscriptions.Any(x => x.TickType == TickType.Quote && x.Type == typeof(QuoteBar)));
             Assert.IsTrue(security.Subscriptions.Any(x => x.TickType == TickType.Trade && x.Type == typeof(TradeBar)));
+        }
+
+        [TestCase("BTGUSDT", SecurityType.CryptoFuture, Market.Binance)]
+        [TestCase("USDTEUR", SecurityType.Forex, Market.Oanda)]
+        public void CannotCreateSecurityWhenBaseCurrencyNotFound(string ticker, SecurityType securityType, string market)
+        {
+            var symbol = QuantConnect.Symbol.Create(ticker, securityType, market);
+            var subscriptionTypes = new List<Tuple<Type, TickType>>
+            {
+                new Tuple<Type, TickType>(typeof(TradeBar), TickType.Trade),
+                new Tuple<Type, TickType>(typeof(QuoteBar), TickType.Quote),
+                new Tuple<Type, TickType>(typeof(OpenInterest), TickType.OpenInterest)
+            };
+
+            var configs = _subscriptionManager.SubscriptionDataConfigService.Add(symbol, Resolution.Second, false, false, false, false, false, subscriptionTypes);
+            Assert.Throws<ArgumentException>(() => _securityService.CreateSecurity(symbol, configs, 1.0m, false));
         }
         
         [Test]

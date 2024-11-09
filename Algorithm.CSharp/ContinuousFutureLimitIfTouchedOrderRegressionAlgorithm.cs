@@ -48,8 +48,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
             if (_ticket == null)
             {
@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (_ticket == null || _ticket.Status != OrderStatus.Filled)
             {
-                throw new Exception("Order ticket was not placed or filled!");
+                throw new RegressionTestException("Order ticket was not placed or filled!");
             }
         }
 
@@ -73,12 +73,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 19876;
+        public long DataPoints => 19888;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -86,52 +86,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "-99.258%"},
             {"Drawdown", "6.300%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "93870.7"},
             {"Net Profit", "-6.129%"},
-            {"Sharpe Ratio", "-2.182"},
+            {"Sharpe Ratio", "-2.199"},
+            {"Sortino Ratio", "-2.305"},
             {"Probabilistic Sharpe Ratio", "5.175%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.976"},
+            {"Alpha", "-0.984"},
             {"Beta", "-0.022"},
             {"Annual Standard Deviation", "0.449"},
             {"Annual Variance", "0.202"},
             {"Information Ratio", "-2.231"},
             {"Tracking Error", "0.513"},
-            {"Treynor Ratio", "43.626"},
+            {"Treynor Ratio", "43.96"},
             {"Total Fees", "$2.15"},
             {"Estimated Strategy Capacity", "$2600000000.00"},
             {"Lowest Capacity Asset", "ES VMKLFZIH2MTD"},
-            {"Fitness Score", "0.028"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-1.662"},
-            {"Return Over Maximum Drawdown", "-18.253"},
-            {"Portfolio Turnover", "0.206"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "f0e1235ff2d29030e374d966b3e225fa"}
+            {"Portfolio Turnover", "16.49%"},
+            {"OrderListHash", "d13f91ab95169699139d21685a5e346a"}
         };
     }
 }

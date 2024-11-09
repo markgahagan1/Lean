@@ -14,6 +14,7 @@
 */
 
 using NUnit.Framework;
+using QuantConnect.Statistics;
 using System.Collections.Generic;
 
 namespace QuantConnect.Tests.Common
@@ -26,34 +27,33 @@ namespace QuantConnect.Tests.Common
         {
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("PythonDictionaryFeatureRegressionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "3"},
+                    {PerformanceMetrics.TotalOrders, "3"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
-                    {"Compounding Annual Return", "-100%"},
-                    {"Drawdown", "99.600%"},
+                    {"Compounding Annual Return", "349.409%"},
+                    {"Drawdown", "2.600%"},
                     {"Expectancy", "0"},
-                    {"Net Profit", "-99.625%"},
-                    {"Sharpe Ratio", "-0.126"},
-                    {"Probabilistic Sharpe Ratio", "1.667%"},
+                    {"Net Profit", "1.940%"},
+                    {"Sharpe Ratio", "10.771"},
+                    {"Probabilistic Sharpe Ratio", "66.098%"},
                     {"Loss Rate", "0%"},
                     {"Win Rate", "0%"},
                     {"Profit-Loss Ratio", "0"},
-                    {"Alpha", "2.999"},
-                    {"Beta", "-2.017"},
-                    {"Annual Standard Deviation", "7.952"},
-                    {"Annual Variance", "63.235"},
-                    {"Information Ratio", "-0.374"},
-                    {"Tracking Error", "7.968"},
-                    {"Treynor Ratio", "0.496"},
+                    {"Alpha", "0.571"},
+                    {"Beta", "1.247"},
+                    {"Annual Standard Deviation", "0.282"},
+                    {"Annual Variance", "0.079"},
+                    {"Information Ratio", "14.457"},
+                    {"Tracking Error", "0.073"},
+                    {"Treynor Ratio", "2.433"},
                     {"Total Fees", "$0.00"},
-                    {"OrderListHash", "d303a19fe5a40b59ee99535985833000"}
+                    {"OrderListHash", "a91c50e19b6b9ee19007be4555029779"}
                 },
                 Language.Python,
                 AlgorithmStatus.Completed);
 
             AlgorithmRunner.RunLocalBacktest(parameter.Algorithm,
                 parameter.Statistics,
-                parameter.AlphaStatistics,
                 parameter.Language,
                 parameter.ExpectedFinalStatus,
                 initialCash: 100000);

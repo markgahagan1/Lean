@@ -66,7 +66,7 @@ namespace QuantConnect.Algorithm.CSharp
                 || insightsCollection.Insights.Count(insight => insight.Symbol == _spy) != 1
                 || insightsCollection.Insights.Count(insight => insight.Symbol == _ibm) != 1)
             {
-                throw new Exception("Unexpected insights were emitted");
+                throw new RegressionTestException("Unexpected insights were emitted");
             }
         }
 
@@ -103,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -116,52 +116,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "9"},
+            {"Total Orders", "9"},
             {"Average Win", "0.86%"},
             {"Average Loss", "-0.27%"},
-            {"Compounding Annual Return", "184.364%"},
+            {"Compounding Annual Return", "206.404%"},
             {"Drawdown", "1.700%"},
             {"Expectancy", "1.781"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101441.92"},
             {"Net Profit", "1.442%"},
-            {"Sharpe Ratio", "4.86"},
+            {"Sharpe Ratio", "4.836"},
+            {"Sortino Ratio", "10.481"},
             {"Probabilistic Sharpe Ratio", "59.497%"},
             {"Loss Rate", "33%"},
             {"Win Rate", "67%"},
             {"Profit-Loss Ratio", "3.17"},
-            {"Alpha", "4.181"},
+            {"Alpha", "4.164"},
             {"Beta", "-1.322"},
             {"Annual Standard Deviation", "0.321"},
             {"Annual Variance", "0.103"},
             {"Information Ratio", "-0.795"},
             {"Tracking Error", "0.532"},
-            {"Treynor Ratio", "-1.18"},
+            {"Treynor Ratio", "-1.174"},
             {"Total Fees", "$14.78"},
-            {"Estimated Strategy Capacity", "$47000000.00"},
+            {"Estimated Strategy Capacity", "$120000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.408"},
-            {"Kelly Criterion Estimate", "16.559"},
-            {"Kelly Criterion Probability Value", "0.316"},
-            {"Sortino Ratio", "12.447"},
-            {"Return Over Maximum Drawdown", "106.327"},
-            {"Portfolio Turnover", "0.411"},
-            {"Total Insights Generated", "3"},
-            {"Total Insights Closed", "3"},
-            {"Total Insights Analysis Completed", "3"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "3"},
-            {"Long/Short Ratio", "0%"},
-            {"Estimated Monthly Alpha Value", "$20784418.6104"},
-            {"Total Accumulated Estimated Alpha Value", "$3579538.7607"},
-            {"Mean Population Estimated Insight Value", "$1193179.5869"},
-            {"Mean Population Direction", "100%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "100%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "9da9afe1e9137638a55db1676adc2be1"}
+            {"Portfolio Turnover", "41.18%"},
+            {"OrderListHash", "713c956deb193bed2290e9f379c0f9f9"}
         };
     }
 }

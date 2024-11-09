@@ -49,7 +49,7 @@ namespace QuantConnect.Algorithm.CSharp
             UniverseSettings.Resolution = Resolution;
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (Time.Month != _lastMonth)
             {
@@ -62,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp
                 var delistedSecurity = investedSymbols.Where(symbol => symbol.ID.Date.AddDays(1) < Time).ToList();
                 if (delistedSecurity.Count > 0)
                 {
-                    throw new Exception($"[{UtcTime}] We hold a delisted securities: {string.Join(",", delistedSecurity)}");
+                    throw new RegressionTestException($"[{UtcTime}] We hold a delisted securities: {string.Join(",", delistedSecurity)}");
                 }
                 Log($"Holdings({Time}): {string.Join(",", investedSymbols)}");
             }
@@ -72,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp
                 return;
             }
 
-            foreach (var chain in data.OptionChains.Values)
+            foreach (var chain in slice.OptionChains.Values)
             {
                 foreach (var contractsValue in chain.Contracts.Values)
                 {
@@ -86,11 +86,11 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!_traded)
             {
-                throw new Exception("We expected some FOP trading to happen");
+                throw new RegressionTestException("We expected some FOP trading to happen");
             }
             if (Portfolio.Invested)
             {
-                throw new Exception("We shouldn't be invested anymore");
+                throw new RegressionTestException("We shouldn't be invested anymore");
             }
         }
 
@@ -102,12 +102,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
-        /// </summary>0
-        public virtual long DataPoints => 5117455;
+        /// </summary>
+        public virtual long DataPoints => 4632655;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -115,52 +115,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "16"},
+            {"Total Orders", "16"},
             {"Average Win", "0.01%"},
             {"Average Loss", "-0.02%"},
             {"Compounding Annual Return", "-0.111%"},
             {"Drawdown", "0.100%"},
             {"Expectancy", "-0.678"},
+            {"Start Equity", "10000000"},
+            {"End Equity", "9988860.24"},
             {"Net Profit", "-0.111%"},
-            {"Sharpe Ratio", "-0.967"},
+            {"Sharpe Ratio", "-10.413"},
+            {"Sortino Ratio", "-0.961"},
             {"Probabilistic Sharpe Ratio", "0.000%"},
             {"Loss Rate", "80%"},
             {"Win Rate", "20%"},
             {"Profit-Loss Ratio", "0.61"},
-            {"Alpha", "-0.001"},
+            {"Alpha", "-0.008"},
             {"Beta", "-0.001"},
             {"Annual Standard Deviation", "0.001"},
             {"Annual Variance", "0"},
-            {"Information Ratio", "-1.075"},
+            {"Information Ratio", "-1.076"},
             {"Tracking Error", "0.107"},
-            {"Treynor Ratio", "1.353"},
+            {"Treynor Ratio", "14.588"},
             {"Total Fees", "$19.76"},
             {"Estimated Strategy Capacity", "$1300000000.00"},
             {"Lowest Capacity Asset", "DC V5E8PHPRCHJ8|DC V5E8P9SH0U0X"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-0.129"},
-            {"Return Over Maximum Drawdown", "-0.997"},
-            {"Portfolio Turnover", "0"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "d10e8665214344369e3e8f1c49dbdd67"}
+            {"Portfolio Turnover", "0.00%"},
+            {"OrderListHash", "7f06f736e2f1294916fb2485519021a2"}
         };
     }
 }

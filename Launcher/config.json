@@ -39,7 +39,6 @@
   "map-file-provider": "QuantConnect.Data.Auxiliary.LocalDiskMapFileProvider",
   "factor-file-provider": "QuantConnect.Data.Auxiliary.LocalDiskFactorFileProvider",
   "data-provider": "QuantConnect.Lean.Engine.DataFeeds.DefaultDataProvider",
-  "alpha-handler": "QuantConnect.Lean.Engine.Alphas.DefaultAlphaHandler",
   "data-channel-provider": "DataChannelProvider",
   "object-store": "QuantConnect.Lean.Engine.Storage.LocalObjectStore",
   "data-aggregator": "QuantConnect.Lean.Engine.DataFeeds.AggregationManager",
@@ -56,7 +55,8 @@
   "maximum-warmup-history-days-look-back": 5,
 
   // limits the amount of data points per chart series. Applies only for backtesting
-  "maximum-data-points-per-chart-series": 4000,
+  "maximum-data-points-per-chart-series": 1000000,
+  "maximum-chart-series": 30,
 
   // if one uses true in following token, market hours will remain open all hours and all days.
   // if one uses false will make lean operate only during regular market hours.
@@ -64,6 +64,9 @@
 
   // save list of transactions to the specified csv file
   "transaction-log": "",
+
+  // Prefix for Windows reserved filenames
+  "reserved-words-prefix": "@",
 
   // To get your api access token go to quantconnect.com/account
   "job-user-id": "0",
@@ -89,6 +92,7 @@
   "ib-trading-mode": "paper",
   "ib-enable-delayed-streaming-data": false,
   "ib-version": "974",
+  "ib-weekly-restart-utc-time": "22:00:00",
 
   // tradier configuration
   "tradier-environment": "paper",
@@ -114,10 +118,11 @@
   "iqfeed-productName": "",
   "iqfeed-version": "1.0",
 
-  // gdax configuration
-  "gdax-api-secret": "",
-  "gdax-api-key": "",
-  "gdax-passphrase": "",
+  // coinbase configuration
+  "coinbase-rest-api": "https://api.coinbase.com",
+  "coinbase-url": "wss://advanced-trade-ws.coinbase.com",
+  "coinbase-api-key": "",
+  "coinbase-api-secret": "",
 
   // bitfinex configuration
   "bitfinex-api-secret": "",
@@ -126,8 +131,15 @@
   // binance configuration
   "binance-api-secret": "",
   "binance-api-key": "",
+  // spot/margin
   "binance-api-url": "https://api.binance.com",
   "binance-websocket-url": "wss://stream.binance.com:9443/ws",
+  // USDT futures
+  "binance-fapi-url": "https://fapi.binance.com",
+  "binance-fwebsocket-url": "wss://fstream.binance.com/ws",
+  // Coin futures
+  "binance-dapi-url": "https://dapi.binance.com",
+  "binance-dwebsocket-url": "wss://dstream.binance.com/ws",
 
   // binance.us configuration
   "binanceus-api-secret": "",
@@ -135,20 +147,48 @@
   "binanceus-api-url": "https://api.binance.us",
   "binanceus-websocket-url": "wss://stream.binance.us:9443/ws",
 
+
+  // bybit configuration
+  "bybit-api-secret": "",
+  "bybit-api-key": "",
+  "bybit-api-url": "https://api.bybit.com",
+  "bybit-websocket-url": "wss://stream.bybit.com",
+
+  // Eze configuration
+  "eze-api-address-url": "",
+  "eze-port": "",
+  "eze-domain": "",
+  "eze-locale": "",
+  "eze-password": "",
+  "eze-user-name": "",
+
   // kraken configuration
   "kraken-api-secret": "",
   "kraken-api-key": "",
   "kraken-verification-tier": "Starter", // Starter, Intermediate, Pro
 
-  // arteyu configuration
-  "atreyu-host": "",
-  "atreyu-req-port": "",
-  "atreyu-sub-port": "",
-  "atreyu-username": "",
-  "atreyu-password": "",
-  "atreyu-client-id": "",
-  "atreyu-broker-mpid": "",
-  "atreyu-locate-rqd": "",
+  // wolverine configuration
+  "wolverine-host": "",
+  "wolverine-port": "",
+  "wolverine-account": "",
+  "wolverine-sender-comp-id": "",
+  "wolverine-target-comp-id": "",
+  "wolverine-on-behalf-of-comp-id": "",
+  "wolverine-log-fix-messages": false,
+
+  // TDAmeritrade configuration
+  "tdameritrade-account-number": "",
+  "tdameritrade-api-key": "",
+  "tdameritrade-access-token": "",
+
+  // RBI configuration
+  "rbi-host": "",
+  "rbi-port": "",
+  "rbi-account": "",
+  "rbi-sender-comp-id": "",
+  "rbi-target-comp-id": "",
+  "rbi-on-behalf-of-comp-id": "",
+  "rbi-log-fix-messages": false,
 
   // Trading Technologies configuration
   "tt-user-name": "",
@@ -166,6 +206,21 @@
   "tt-order-routing-host": "",
   "tt-order-routing-port": "",
   "tt-log-fix-messages": false,
+
+  // Trade Station configuration
+  "trade-station-client-id": "",
+  "trade-station-client-secret": "",
+  "trade-station-redirect-url": "http://localhost",
+  "trade-station-refresh-token": "",
+  "trade-station-api-url": "https://sim-api.tradestation.com",
+  "trade-station-account-type": "Cash|Margin|Futures",
+  "trade-station-account-id": "",
+
+  // Alpaca configuration
+  "alpaca-api-key": "",
+  "alpaca-api-secret": "",
+  "alpaca-access-token": "",
+  "alpaca-paper-trading": true,
 
   // Exante trading configuration
   // client-id, application-id, shared-key are required to access Exante REST API
@@ -329,7 +384,7 @@
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
-      "data-queue-handler": [ "QuantConnect.Brokerages.InteractiveBrokers.InteractiveBrokersBrokerage" ],
+      "data-queue-handler": [ "InteractiveBrokersBrokerage" ],
       "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
       "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
       "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
@@ -344,10 +399,10 @@
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
-      "data-queue-handler": [ "QuantConnect.ToolBox.IQFeed.IQFeedDataQueueHandler" ],
+      "data-queue-handler": [ "QuantConnect.IQFeed.IQFeedDataQueueHandler" ],
       "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
       "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
-      "history-provider": [ "QuantConnect.ToolBox.IQFeed.IQFeedDataQueueHandler", "SubscriptionDataReaderHistoryProvider" ]
+      "history-provider": [ "QuantConnect.IQFeed.IQFeedDataQueueHandler", "SubscriptionDataReaderHistoryProvider" ]
     },
 
     // defines the 'live-fxcm' environment
@@ -380,12 +435,12 @@
       "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
     },
 
-    "live-gdax": {
+    "live-coinbase": {
       "live-mode": true,
 
       // real brokerage implementations require the BrokerageTransactionHandler
-      "live-mode-brokerage": "GDAXBrokerage",
-      "data-queue-handler": [ "GDAXDataQueueHandler" ],
+      "live-mode-brokerage": "CoinbaseBrokerage",
+      "data-queue-handler": [ "CoinbaseBrokerage" ],
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
@@ -412,8 +467,36 @@
       "live-mode": true,
 
       // real brokerage implementations require the BrokerageTransactionHandler
-      "live-mode-brokerage": "QuantConnect.BinanceBrokerage.BinanceBrokerage",
-      "data-queue-handler": [ "QuantConnect.BinanceBrokerage.BinanceBrokerage" ],
+      "live-mode-brokerage": "BinanceBrokerage",
+      "data-queue-handler": [ "BinanceBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-futures-binance": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "BinanceFuturesBrokerage",
+      "data-queue-handler": [ "BinanceFuturesBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-coin-futures-binance": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "BinanceCoinFuturesBrokerage",
+      "data-queue-handler": [ "BinanceCoinFuturesBrokerage" ],
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
@@ -426,8 +509,8 @@
       "live-mode": true,
 
       // real brokerage implementations require the BrokerageTransactionHandler
-      "live-mode-brokerage": "QuantConnect.BinanceBrokerage.BinanceUSBrokerage",
-      "data-queue-handler": [ "QuantConnect.BinanceBrokerage.BinanceUSBrokerage" ],
+      "live-mode-brokerage": "BinanceUSBrokerage",
+      "data-queue-handler": [ "BinanceUSBrokerage" ],
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
@@ -436,18 +519,60 @@
       "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
     },
 
-    // defines the 'live-atreyu' environment
-    "live-atreyu": {
+    "live-bybit": {
       "live-mode": true,
 
       // real brokerage implementations require the BrokerageTransactionHandler
-      "live-mode-brokerage": "QuantConnect.Atreyu.AtreyuBrokerage",
-      "data-queue-handler": [ "QuantConnect.Lean.Engine.DataFeeds.Queues.LiveDataQueue" ],
+      "live-mode-brokerage": "BybitBrokerage",
+      "data-queue-handler": [ "BybitBrokerage" ],
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
       "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
-      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler"
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-trade-station": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "TradeStationBrokerage",
+      "data-queue-handler": [ "TradeStationBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-alpaca": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "AlpacaBrokerage",
+      "data-queue-handler": [ "AlpacaBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-futures-bybit": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "BybitFuturesBrokerage",
+      "data-queue-handler": [ "BybitFuturesBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
     },
 
     // defines the 'live-trading-technologies' environment
@@ -515,6 +640,62 @@
       // real brokerage implementations require the BrokerageTransactionHandler
       "live-mode-brokerage": "QuantConnect.FTXBrokerage.FTXUSBrokerage",
       "data-queue-handler": [ "QuantConnect.FTXBrokerage.FTXUSBrokerage" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ]
+    },
+
+    "live-wolverine": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "WolverineBrokerage",
+      "history-provider": [ "SubscriptionDataReaderHistoryProvider" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler"
+    },
+
+    "live-tdameritrade": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "TDAmeritradeBrokerage",
+      "history-provider": [ "BrokerageHistoryProvider", "SubscriptionDataReaderHistoryProvider" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler",
+      "data-queue-handler": [ "TDAmeritradeBrokerage" ]
+    },
+
+    "live-rbi": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "RBIBrokerage",
+      "data-queue-handler": [ "QuantConnect.Lean.Engine.DataFeeds.Queues.LiveDataQueue" ],
+      "history-provider": [ "SubscriptionDataReaderHistoryProvider" ],
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.LiveTradingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BrokerageTransactionHandler"
+    },
+
+    // defines the 'live-eze' environment
+    "live-eze": {
+      "live-mode": true,
+
+      // real brokerage implementations require the BrokerageTransactionHandler
+      "live-mode-brokerage": "QuantConnect.EzeBrokerage.EzeBrokerage",
+      "data-queue-handler": [ "QuantConnect.EzeBrokerage.EzeBrokerage" ],
       "setup-handler": "QuantConnect.Lean.Engine.Setup.BrokerageSetupHandler",
       "result-handler": "QuantConnect.Lean.Engine.Results.LiveTradingResultHandler",
       "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.LiveTradingDataFeed",

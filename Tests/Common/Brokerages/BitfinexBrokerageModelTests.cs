@@ -39,6 +39,7 @@ namespace QuantConnect.Tests.Common.Brokerages
                 return new Crypto(
                     SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
                     new Cash(Currencies.USD, 0, 1m),
+                    new Cash("ETH", 0, 0),
                     new SubscriptionDataConfig(
                         typeof(TradeBar),
                         Symbol,
@@ -161,6 +162,7 @@ namespace QuantConnect.Tests.Common.Brokerages
             return new Crypto(
                 SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
                 new Cash(Currencies.USD, 0, 1m),
+                new Cash(symbol.Value.RemoveFromEnd(Currencies.USD), 0, 0),
                 new SubscriptionDataConfig(
                     typeof(TradeBar),
                     symbol,
@@ -183,8 +185,7 @@ namespace QuantConnect.Tests.Common.Brokerages
         {
             BrokerageMessageEvent message;
             var order = new Mock<Order>();
-
-            order.Object.Quantity = orderQuantity;
+            order.Setup(x => x.Quantity).Returns(orderQuantity);
 
             Assert.AreEqual(isValidOrderQuantity, _bitfinexBrokerageModel.CanSubmitOrder(TestsHelpers.GetSecurity(market: Market.Bitfinex), order.Object, out message));
         }

@@ -14,23 +14,24 @@
  *
 */
 
-using System;
-using System.Linq;
-using System.IO;
 using NUnit.Framework;
 using QuantConnect.Algorithm;
+using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Securities;
-using System.Collections.Generic;
 using QuantConnect.Securities.Cfd;
 using QuantConnect.Securities.Crypto;
+using QuantConnect.Securities.CryptoFuture;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Forex;
 using QuantConnect.Securities.Future;
-using QuantConnect.Securities.Option;
-using QuantConnect.Lean.Engine.DataFeeds;
-using QuantConnect.Tests.Engine.DataFeeds;
 using QuantConnect.Securities.IndexOption;
-using QuantConnect.Data.Custom.AlphaStreams;
+using QuantConnect.Securities.Option;
+using QuantConnect.Securities.Positions;
+using QuantConnect.Tests.Engine.DataFeeds;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Index = QuantConnect.Securities.Index.Index;
 
 namespace QuantConnect.Tests.Algorithm
@@ -90,6 +91,9 @@ namespace QuantConnect.Tests.Algorithm
                         break;
                     case SecurityType.Crypto:
                         var crypto = (Crypto)security;
+                        break;
+                    case SecurityType.CryptoFuture:
+                        var cryptoFuture = (CryptoFuture)security;
                         break;
                     case SecurityType.Base:
                         break;
@@ -212,6 +216,28 @@ namespace QuantConnect.Tests.Algorithm
             }
         }
 
+        // Reproduces https://github.com/QuantConnect/Lean/issues/7451
+        [Test]
+        public void DoesNotAddExtraIndexSubscriptionAfterAddingIndexOptionContract()
+        {
+            var spx = _algo.AddIndex("SPX", Resolution.Minute, fillForward: false);
+
+            Assert.AreEqual(1, _algo.SubscriptionManager.Subscriptions.Count());
+            Assert.AreEqual(spx.Symbol, _algo.SubscriptionManager.Subscriptions.Single().Symbol);
+
+            var spxOption = Symbol.CreateOption(
+                spx.Symbol,
+                Market.USA,
+                OptionStyle.European,
+                OptionRight.Call,
+                3200m,
+                new DateTime(2021, 1, 15));
+            _algo.AddIndexOptionContract(spxOption, Resolution.Minute);
+
+            Assert.Greater(_algo.SubscriptionManager.Subscriptions.Count(), 1);
+            Assert.AreEqual(1, _algo.SubscriptionManager.Subscriptions.Count(x => x.Symbol == spx.Symbol));
+        }
+
         private static TestCaseData[] TestAddSecurityWithSymbol
         {
             get
@@ -227,7 +253,6 @@ namespace QuantConnect.Tests.Algorithm
                     new TestCaseData(Symbols.SPY_Option_Chain, null),
                     new TestCaseData(Symbols.SPY_C_192_Feb19_2016, null),
                     new TestCaseData(Symbols.SPY_P_192_Feb19_2016, null),
-                    new TestCaseData(Symbol.CreateBase(typeof(AlphaStreamsPortfolioState), Symbols.SPY, Market.USA), typeof(AlphaStreamsPortfolioState)),
                     new TestCaseData(Symbol.Create("CustomData", SecurityType.Base, Market.Binance), null),
                     new TestCaseData(Symbol.Create("CustomData2", SecurityType.Base, Market.COMEX), null)
                 };
@@ -251,7 +276,8 @@ namespace QuantConnect.Tests.Algorithm
 
         private static DataNormalizationMode[] GetDataNormalizationModes()
         {
-            return (DataNormalizationMode[])Enum.GetValues(typeof(DataNormalizationMode));
+            return ((DataNormalizationMode[])Enum.GetValues(typeof(DataNormalizationMode)))
+                .Where(x => x != DataNormalizationMode.ScaledRaw).ToArray();
         }
 
         private static Func<QCAlgorithm, Security>[] FuturesTestCases

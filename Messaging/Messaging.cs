@@ -19,7 +19,6 @@ using QuantConnect.Notifications;
 using QuantConnect.Packets;
 using QuantConnect.Util;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace QuantConnect.Messaging
@@ -97,14 +96,6 @@ namespace QuantConnect.Messaging
 
                     if (result.Progress == 1)
                     {
-                        // inject alpha statistics into backtesting result statistics
-                        // this is primarily so we can easily regression test these values
-                        var alphaStatistics = result.Results.AlphaRuntimeStatistics?.ToDictionary() ?? Enumerable.Empty<KeyValuePair<string, string>>();
-                        foreach (var kvp in alphaStatistics)
-                        {
-                            result.Results.Statistics.Add(kvp);
-                        }
-
                         var orderHash = result.Results.Orders.GetHash();
                         result.Results.Statistics.Add("OrderListHash", orderHash);
 
@@ -121,13 +112,9 @@ namespace QuantConnect.Messaging
         /// </summary>
         public void SendNotification(Notification notification)
         {
-            var type = notification.GetType();
-            if (type == typeof(NotificationEmail)
-             || type == typeof(NotificationWeb)
-             || type == typeof(NotificationSms)
-             || type == typeof(NotificationTelegram))
+            if (!notification.CanSend())
             {
-                Log.Error("Messaging.SendNotification(): Send not implemented for notification of type: " + type.Name);
+                Log.Error("Messaging.SendNotification(): Send not implemented for notification of type: " + notification.GetType().Name);
                 return;
             }
             notification.Send();

@@ -39,12 +39,14 @@ namespace QuantConnect.Tests.Algorithm
         {
             var algorithm = new QCAlgorithm();
             algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+            algorithm.SetLiveMode(false);
             var security = algorithm.AddEquity("SPY");
             security.Exchange = new SecurityExchange(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork));
+            security.Exchange.SetLocalDateTimeFrontierProvider(algorithm.TimeKeeper.GetLocalTimeKeeper(TimeZones.NewYork));
             security.SetMarketPrice(new Tick { Value = 270m });
             algorithm.SetFinishedWarmingUp();
 
-            var brokerage = new NullBrokerage();
+            using var brokerage = new NullBrokerage();
             var transactionHandler = new BrokerageTransactionHandler();
 
             transactionHandler.Initialize(algorithm, brokerage, new LiveTradingResultHandler());
@@ -75,12 +77,15 @@ namespace QuantConnect.Tests.Algorithm
     {
         public virtual void Dispose() {}
 #pragma warning disable 0067 // NullBrokerage doesn't use any of these so we will just ignore them
-        public event EventHandler<OrderEvent> OrderStatusChanged;
+        public event EventHandler<List<OrderEvent>> OrdersStatusChanged;
         public event EventHandler<OrderEvent> OptionPositionAssigned;
         public event EventHandler<OptionNotificationEventArgs> OptionNotification;
         public event EventHandler<AccountEvent> AccountChanged;
         public event EventHandler<BrokerageMessageEvent> Message;
         public event EventHandler<DelistingNotificationEventArgs> DelistingNotification;
+        public event EventHandler<BrokerageOrderIdChangedEvent> OrderIdChanged;
+        public event EventHandler<NewBrokerageOrderNotificationEventArgs> NewBrokerageOrderNotification;
+        public event EventHandler<OrderUpdateEvent> OrderUpdated;
 #pragma warning restore 0067
 
         public string Name => "NullBrokerage";

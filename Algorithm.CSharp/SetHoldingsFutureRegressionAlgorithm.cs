@@ -73,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp
                         try
                         {
                             SetHoldings(_contractSymbol, 1.1);
-                            throw new Exception("We expect invalid target for futures to throw an exception");
+                            throw new RegressionTestException("We expect invalid target for futures to throw an exception");
                         }
                         catch (InvalidOperationException)
                         {
@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
                         try
                         {
                             SetHoldings(_contractSymbol, -1.1);
-                            throw new Exception("We expect invalid target for futures to throw an exception");
+                            throw new RegressionTestException("We expect invalid target for futures to throw an exception");
                         }
                         catch (InvalidOperationException)
                         {
@@ -117,7 +117,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 if (Portfolio.TotalHoldingsValue / Portfolio.TotalPortfolioValue < 10)
                 {
-                    throw new Exception("Expected to be trading using the futures margin leverage");
+                    throw new RegressionTestException("Expected to be trading using the futures margin leverage");
                 }
 
                 var security = Securities[_contractSymbol];
@@ -126,14 +126,14 @@ namespace QuantConnect.Algorithm.CSharp
 
                 if ((Portfolio.TotalMarginUsed - marginUsed) != 0)
                 {
-                    throw new Exception($"We expect TotalMarginUsed to be {marginUsed}, but was {Portfolio.TotalMarginUsed}");
+                    throw new RegressionTestException($"We expect TotalMarginUsed to be {marginUsed}, but was {Portfolio.TotalMarginUsed}");
                 }
 
                 var initialMarginRequired = model.InitialOvernightMarginRequirement * security.Holdings.AbsoluteQuantity;
 
                 if (Portfolio.TotalPortfolioValue - initialMarginRequired > model.InitialOvernightMarginRequirement * security.SymbolProperties.LotSize)
                 {
-                    throw new Exception("We expect to be trading using the biggest position we can, there seems to be room for another contract");
+                    throw new RegressionTestException("We expect to be trading using the biggest position we can, there seems to be room for another contract");
                 }
             }
         }
@@ -146,12 +146,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 21664;
+        public long DataPoints => 21665;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -159,18 +159,26 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "3"},
             {"Average Win", "0%"},
             {"Average Loss", "-1.34%"},
             {"Compounding Annual Return", "-97.000%"},
             {"Drawdown", "2.600%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "974316.1"},
             {"Net Profit", "-2.568%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -185,26 +193,8 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Fees", "$2033.90"},
             {"Estimated Strategy Capacity", "$530000.00"},
             {"Lowest Capacity Asset", "ES VP274HSU1AF5"},
-            {"Fitness Score", "0.5"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "79228162514264337593543950335"},
-            {"Return Over Maximum Drawdown", "-38.597"},
-            {"Portfolio Turnover", "40.36"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "9e5f86d17fe77ed081e9e3dfe692fd5d"}
+            {"Portfolio Turnover", "2690.71%"},
+            {"OrderListHash", "f33db020caac94864efec448e79bce97"}
         };
     }
 }

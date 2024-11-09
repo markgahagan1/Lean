@@ -40,7 +40,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetUniverseSelection(new CustomUniverseSelectionModel());
         }
 
-        public override void OnData(Slice data)
+        public override void OnData(Slice slice)
         {
             if (!Portfolio.Invested)
             {
@@ -54,19 +54,15 @@ namespace QuantConnect.Algorithm.CSharp
         private class CustomUniverseSelectionModel : FundamentalUniverseSelectionModel
         {
             private bool _selected;
-            public CustomUniverseSelectionModel(): base(true, null)
+            public CustomUniverseSelectionModel(): base()
             {
             }
-            public override IEnumerable<Symbol> SelectCoarse(QCAlgorithm algorithm, IEnumerable<CoarseFundamental> coarse)
-            {
-                return new[] { QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA) };
-            }
-            public override IEnumerable<Symbol> SelectFine(QCAlgorithm algorithm, IEnumerable<FineFundamental> fine)
+            public override IEnumerable<Symbol> Select(QCAlgorithm algorithm, IEnumerable<Fundamental> fundamental)
             {
                 if (!_selected)
                 {
                     _selected = true;
-                    return fine.Select(x => x.Symbol);
+                    return new[] { QuantConnect.Symbol.Create("AAPL", SecurityType.Equity, Market.USA) };
                 }
                 return Data.UniverseSelection.Universe.Unchanged;
             }
@@ -80,12 +76,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 7208;
+        public long DataPoints => 78062;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -93,52 +89,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "-7.765%"},
             {"Drawdown", "0.400%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99668.37"},
             {"Net Profit", "-0.332%"},
-            {"Sharpe Ratio", "-5.288"},
+            {"Sharpe Ratio", "-5.972"},
+            {"Sortino Ratio", "-7.125"},
             {"Probabilistic Sharpe Ratio", "5.408%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.049"},
+            {"Alpha", "-0.055"},
             {"Beta", "0.1"},
             {"Annual Standard Deviation", "0.011"},
             {"Annual Variance", "0"},
             {"Information Ratio", "0.413"},
             {"Tracking Error", "0.087"},
-            {"Treynor Ratio", "-0.578"},
+            {"Treynor Ratio", "-0.653"},
             {"Total Fees", "$2.89"},
-            {"Estimated Strategy Capacity", "$1600000000.00"},
+            {"Estimated Strategy Capacity", "$2000000000.00"},
             {"Lowest Capacity Asset", "AAPL R735QTJ8XC9X"},
-            {"Fitness Score", "0"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "-8.448"},
-            {"Return Over Maximum Drawdown", "-19.517"},
-            {"Portfolio Turnover", "0.007"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "9b40745cd4c47eb3f442071c2a841821"}
+            {"Portfolio Turnover", "0.67%"},
+            {"OrderListHash", "6198706fef1ce2a60e8f16e7ab1485c1"}
         };
     }
 }

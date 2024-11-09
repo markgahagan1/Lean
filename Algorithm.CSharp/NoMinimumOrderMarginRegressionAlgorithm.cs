@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
-        public override void OnData(Slice data)
+        /// <param name="slice">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice slice)
         {
             SetHoldings("SPY", 0.25);
         }
@@ -54,7 +54,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
@@ -67,52 +67,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "59"},
+            {"Total Orders", "5"},
             {"Average Win", "0.00%"},
             {"Average Loss", "0.00%"},
-            {"Compounding Annual Return", "32.831%"},
+            {"Compounding Annual Return", "38.897%"},
             {"Drawdown", "0.600%"},
-            {"Expectancy", "-0.919"},
-            {"Net Profit", "0.364%"},
-            {"Sharpe Ratio", "4.969"},
-            {"Probabilistic Sharpe Ratio", "65.344%"},
-            {"Loss Rate", "93%"},
-            {"Win Rate", "7%"},
-            {"Profit-Loss Ratio", "0.22"},
-            {"Alpha", "-0.213"},
-            {"Beta", "0.243"},
-            {"Annual Standard Deviation", "0.054"},
+            {"Expectancy", "-0.118"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100420.97"},
+            {"Net Profit", "0.421%"},
+            {"Sharpe Ratio", "5.45"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "67.350%"},
+            {"Loss Rate", "50%"},
+            {"Win Rate", "50%"},
+            {"Profit-Loss Ratio", "0.76"},
+            {"Alpha", "-0.19"},
+            {"Beta", "0.249"},
+            {"Annual Standard Deviation", "0.055"},
             {"Annual Variance", "0.003"},
-            {"Information Ratio", "-10.175"},
-            {"Tracking Error", "0.168"},
-            {"Treynor Ratio", "1.106"},
-            {"Total Fees", "$59.00"},
-            {"Estimated Strategy Capacity", "$13000000.00"},
+            {"Information Ratio", "-10.01"},
+            {"Tracking Error", "0.167"},
+            {"Treynor Ratio", "1.213"},
+            {"Total Fees", "$5.00"},
+            {"Estimated Strategy Capacity", "$63000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
-            {"Fitness Score", "0.077"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "4.656"},
-            {"Return Over Maximum Drawdown", "51.751"},
-            {"Portfolio Turnover", "0.081"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "74d06b3d2605e1c7796284fd8835b3a5"}
+            {"Portfolio Turnover", "5.15%"},
+            {"OrderListHash", "72d5203e9911bad556de371750fe0278"}
         };
     }
 }

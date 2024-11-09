@@ -31,6 +31,7 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public class PortfolioRebalanceOnSecurityChangesRegressionAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
+        private int _generatedInsightsCount;
         private Dictionary<Symbol, DateTime> _lastOrderFilled;
 
         /// <summary>
@@ -62,6 +63,8 @@ namespace QuantConnect.Algorithm.CSharp
             SetExecution(new ImmediateExecutionModel());
 
             _lastOrderFilled = new Dictionary<Symbol, DateTime>();
+
+            InsightsGenerated += (_, e) => _generatedInsightsCount += e.Insights.Length;
         }
 
         public override void OnOrderEvent(OrderEvent orderEvent)
@@ -73,12 +76,22 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     if (UtcTime - lastOrderFilled < TimeSpan.FromDays(30))
                     {
-                        throw new Exception($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
+                        throw new RegressionTestException($"{UtcTime} {orderEvent.Symbol} {UtcTime - lastOrderFilled}");
                     }
                 }
                 _lastOrderFilled[orderEvent.Symbol] = UtcTime;
 
                 Debug($"{orderEvent}");
+            }
+        }
+
+        public override void OnEndOfAlgorithm()
+        {
+            if (Insights.Count == _generatedInsightsCount)
+            {
+                // The number of insights is modified by the Portfolio Construction Model,
+                // since it removes expired insights and insights from removed securities 
+                throw new RegressionTestException($"The number of insights in the insight manager should be different of the number of all insights generated ({_generatedInsightsCount})");
             }
         }
 
@@ -90,12 +103,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5568;
+        public long DataPoints => 5485;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -103,52 +116,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "74"},
-            {"Average Win", "2.44%"},
-            {"Average Loss", "-2.28%"},
-            {"Compounding Annual Return", "-4.581%"},
-            {"Drawdown", "30.500%"},
-            {"Expectancy", "-0.081"},
-            {"Net Profit", "-8.951%"},
-            {"Sharpe Ratio", "-0.137"},
-            {"Probabilistic Sharpe Ratio", "2.627%"},
-            {"Loss Rate", "56%"},
-            {"Win Rate", "44%"},
-            {"Profit-Loss Ratio", "1.07"},
-            {"Alpha", "-0.071"},
-            {"Beta", "0.978"},
-            {"Annual Standard Deviation", "0.152"},
-            {"Annual Variance", "0.023"},
-            {"Information Ratio", "-0.748"},
-            {"Tracking Error", "0.097"},
-            {"Treynor Ratio", "-0.021"},
-            {"Total Fees", "$264.99"},
-            {"Estimated Strategy Capacity", "$55000000.00"},
+            {"Total Orders", "64"},
+            {"Average Win", "2.71%"},
+            {"Average Loss", "-2.34%"},
+            {"Compounding Annual Return", "2.256%"},
+            {"Drawdown", "25.500%"},
+            {"Expectancy", "0.079"},
+            {"Start Equity", "100000"},
+            {"End Equity", "104560.59"},
+            {"Net Profit", "4.561%"},
+            {"Sharpe Ratio", "0.117"},
+            {"Sortino Ratio", "0.106"},
+            {"Probabilistic Sharpe Ratio", "8.398%"},
+            {"Loss Rate", "50%"},
+            {"Win Rate", "50%"},
+            {"Profit-Loss Ratio", "1.16"},
+            {"Alpha", "-0.01"},
+            {"Beta", "0.569"},
+            {"Annual Standard Deviation", "0.125"},
+            {"Annual Variance", "0.016"},
+            {"Information Ratio", "-0.243"},
+            {"Tracking Error", "0.117"},
+            {"Treynor Ratio", "0.026"},
+            {"Total Fees", "$271.25"},
+            {"Estimated Strategy Capacity", "$44000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Fitness Score", "0.027"},
-            {"Kelly Criterion Estimate", "-0.996"},
-            {"Kelly Criterion Probability Value", "1"},
-            {"Sortino Ratio", "-0.323"},
-            {"Return Over Maximum Drawdown", "-0.15"},
-            {"Portfolio Turnover", "0.06"},
-            {"Total Insights Generated", "534"},
-            {"Total Insights Closed", "534"},
-            {"Total Insights Analysis Completed", "534"},
-            {"Long Insight Count", "534"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$-389341000"},
-            {"Total Accumulated Estimated Alpha Value", "$-9476668000"},
-            {"Mean Population Estimated Insight Value", "$-17746570"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "bdb23325dc6c1fa04f63a329346be794"}
+            {"Portfolio Turnover", "4.37%"},
+            {"OrderListHash", "d6286db83c9d034251491fae4c937d76"}
         };
     }
 }

@@ -49,13 +49,28 @@ namespace QuantConnect.Algorithm.CSharp
             // Commented so regression algorithm is more sensitive
             //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
 
-            SetStartDate(2017, 07, 04);
+            SetStartDate(2017, 07, 06);
             SetEndDate(2018, 07, 04);
 
-            AddUniverse<StockDataSource>("my-stock-data-source", stockDataSource =>
+            var universe = AddUniverse<StockDataSource>(stockDataSource =>
             {
-                return stockDataSource.SelectMany(x => x.Symbols);
+                return stockDataSource.OfType<StockDataSource>().SelectMany(x => x.Symbols);
             });
+
+            var historicalSelectionData = History(universe, 3).ToList();
+            if (historicalSelectionData.Count != 3)
+            {
+                throw new RegressionTestException($"Unexpected universe data count {historicalSelectionData.Count}");
+            }
+
+            foreach (var universeData in historicalSelectionData)
+            {
+                var stockDataSource = (StockDataSource)universeData.Single();
+                if (stockDataSource.Symbols.Count != 5)
+                {
+                    throw new RegressionTestException($"Unexpected universe data receieved");
+                }
+            }
         }
 
         /// <summary>
@@ -104,7 +119,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Our custom data type that defines where to get and how to read our backtest and live data.
         /// </summary>
-        class StockDataSource : BaseData
+        class StockDataSource : BaseDataCollection
         {
             private const string LiveUrl = @"https://www.dropbox.com/s/2l73mu97gcehmh7/daily-stock-picker-live.csv?dl=1";
             private const string BacktestUrl = @"https://www.dropbox.com/s/ae1couew5ir3z9y/daily-stock-picker-backtest.csv?dl=1";
@@ -133,7 +148,7 @@ namespace QuantConnect.Algorithm.CSharp
             public override SubscriptionDataSource GetSource(SubscriptionDataConfig config, DateTime date, bool isLiveMode)
             {
                 var url = isLiveMode ? LiveUrl : BacktestUrl;
-                return new SubscriptionDataSource(url, SubscriptionTransportMedium.RemoteFile);
+                return new SubscriptionDataSource(url, SubscriptionTransportMedium.RemoteFile, FileFormat.FoldingCollection);
             }
 
             /// <summary>
@@ -181,65 +196,55 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public List<Language> Languages { get; } = new() { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5300;
+        public long DataPoints => 5269;
 
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public int AlgorithmHistoryDataPoints => 3;
+
+        /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
 
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "6441"},
+            {"Total Orders", "6415"},
             {"Average Win", "0.07%"},
             {"Average Loss", "-0.07%"},
-            {"Compounding Annual Return", "14.802%"},
-            {"Drawdown", "10.400%"},
-            {"Expectancy", "0.068"},
-            {"Net Profit", "14.802%"},
-            {"Sharpe Ratio", "0.978"},
-            {"Probabilistic Sharpe Ratio", "46.740%"},
+            {"Compounding Annual Return", "15.655%"},
+            {"Drawdown", "10.500%"},
+            {"Expectancy", "0.071"},
+            {"Start Equity", "100000"},
+            {"End Equity", "115562.68"},
+            {"Net Profit", "15.563%"},
+            {"Sharpe Ratio", "0.844"},
+            {"Sortino Ratio", "0.788"},
+            {"Probabilistic Sharpe Ratio", "48.632%"},
             {"Loss Rate", "46%"},
             {"Win Rate", "54%"},
-            {"Profit-Loss Ratio", "0.97"},
+            {"Profit-Loss Ratio", "0.98"},
             {"Alpha", "0.008"},
-            {"Beta", "0.98"},
-            {"Annual Standard Deviation", "0.109"},
+            {"Beta", "0.986"},
+            {"Annual Standard Deviation", "0.11"},
             {"Annual Variance", "0.012"},
-            {"Information Ratio", "0.158"},
+            {"Information Ratio", "0.155"},
             {"Tracking Error", "0.041"},
-            {"Treynor Ratio", "0.109"},
-            {"Total Fees", "$7495.19"},
-            {"Estimated Strategy Capacity", "$320000.00"},
+            {"Treynor Ratio", "0.094"},
+            {"Total Fees", "$7460.54"},
+            {"Estimated Strategy Capacity", "$450000.00"},
             {"Lowest Capacity Asset", "BNO UN3IMQ2JU1YD"},
-            {"Fitness Score", "0.695"},
-            {"Kelly Criterion Estimate", "0"},
-            {"Kelly Criterion Probability Value", "0"},
-            {"Sortino Ratio", "1.269"},
-            {"Return Over Maximum Drawdown", "1.424"},
-            {"Portfolio Turnover", "1.613"},
-            {"Total Insights Generated", "0"},
-            {"Total Insights Closed", "0"},
-            {"Total Insights Analysis Completed", "0"},
-            {"Long Insight Count", "0"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$0"},
-            {"Total Accumulated Estimated Alpha Value", "$0"},
-            {"Mean Population Estimated Insight Value", "$0"},
-            {"Mean Population Direction", "0%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "0%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "df66ec72bb4332b14bbe31ec9bea7ffc"}
+            {"Portfolio Turnover", "135.63%"},
+            {"OrderListHash", "29c715831bd675f04226f9fd8855a52e"}
         };
     }
 }

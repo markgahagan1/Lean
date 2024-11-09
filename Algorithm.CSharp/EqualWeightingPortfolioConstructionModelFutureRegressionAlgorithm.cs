@@ -111,7 +111,7 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     if (Portfolio.TotalHoldingsValue / Portfolio.TotalPortfolioValue < 10)
                     {
-                        throw new Exception("Expected to be trading using the futures margin leverage");
+                        throw new RegressionTestException("Expected to be trading using the futures margin leverage");
                     }
                 }
             }
@@ -125,12 +125,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp };
+        public List<Language> Languages { get; } = new() { Language.CSharp };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 72192;
+        public long DataPoints => 94731;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -138,52 +138,42 @@ namespace QuantConnect.Algorithm.CSharp
         public int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
+        /// Final status of the algorithm
+        /// </summary>
+        public AlgorithmStatus AlgorithmStatus => AlgorithmStatus.Completed;
+
+        /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "8"},
+            {"Total Orders", "8"},
             {"Average Win", "0.69%"},
             {"Average Loss", "-2.47%"},
             {"Compounding Annual Return", "-99.966%"},
             {"Drawdown", "28.600%"},
             {"Expectancy", "-0.680"},
+            {"Start Equity", "100000"},
+            {"End Equity", "90213.76"},
             {"Net Profit", "-9.786%"},
-            {"Sharpe Ratio", "-0.598"},
+            {"Sharpe Ratio", "-0.603"},
+            {"Sortino Ratio", "-0.892"},
             {"Probabilistic Sharpe Ratio", "30.082%"},
             {"Loss Rate", "75%"},
             {"Win Rate", "25%"},
             {"Profit-Loss Ratio", "0.28"},
-            {"Alpha", "-15.867"},
+            {"Alpha", "-15.818"},
             {"Beta", "7.498"},
             {"Annual Standard Deviation", "1.669"},
             {"Annual Variance", "2.787"},
             {"Information Ratio", "-2.061"},
             {"Tracking Error", "1.447"},
-            {"Treynor Ratio", "-0.133"},
+            {"Treynor Ratio", "-0.134"},
             {"Total Fees", "$52.01"},
             {"Estimated Strategy Capacity", "$1800000.00"},
             {"Lowest Capacity Asset", "GC VL5E74HP3EE5"},
-            {"Fitness Score", "0.213"},
-            {"Kelly Criterion Estimate", "-24.978"},
-            {"Kelly Criterion Probability Value", "0.773"},
-            {"Sortino Ratio", "-0.966"},
-            {"Return Over Maximum Drawdown", "-5.15"},
-            {"Portfolio Turnover", "5.36"},
-            {"Total Insights Generated", "10"},
-            {"Total Insights Closed", "8"},
-            {"Total Insights Analysis Completed", "8"},
-            {"Long Insight Count", "10"},
-            {"Short Insight Count", "0"},
-            {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$13142.3631"},
-            {"Total Accumulated Estimated Alpha Value", "$2135.634"},
-            {"Mean Population Estimated Insight Value", "$266.9542"},
-            {"Mean Population Direction", "50%"},
-            {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "50.0384%"},
-            {"Rolling Averaged Population Magnitude", "0%"},
-            {"OrderListHash", "525af9e5e2ca7ebdee6c9deeec326a3e"}
+            {"Portfolio Turnover", "475.60%"},
+            {"OrderListHash", "91aeb0d6f6a18df9fd755fc473183395"}
         };
     }
 }

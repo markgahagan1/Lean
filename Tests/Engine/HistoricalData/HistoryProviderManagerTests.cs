@@ -14,27 +14,25 @@
  *
 */
 
-using NUnit.Framework;
-using QuantConnect.Data;
-using QuantConnect.Data.Market;
-using QuantConnect.Interfaces;
-using QuantConnect.Lean.Engine.DataFeeds;
-using QuantConnect.Lean.Engine.HistoricalData;
-using QuantConnect.Packets;
-using QuantConnect.Securities;
-using QuantConnect.Util;
 using System;
 using System.Linq;
+using NUnit.Framework;
+using QuantConnect.Data;
+using QuantConnect.Packets;
+using QuantConnect.Util;
+using QuantConnect.Interfaces;
+using QuantConnect.Tests.Brokerages;
 using QuantConnect.Brokerages.Paper;
-using HistoryRequest = QuantConnect.Data.HistoryRequest;
+using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Lean.Engine.HistoricalData;
 
 namespace QuantConnect.Tests.Engine.HistoricalData
 {
     [TestFixture]
     public class HistoryProviderManagerTests
     {
-        private readonly ZipDataCacheProvider _zipCache = new(TestGlobals.DataProvider);
         private HistoryProviderManager _historyProviderWrapper;
+        private PaperBrokerage _paperBrokerage;
 
         [SetUp]
         public void Setup()
@@ -45,24 +43,27 @@ namespace QuantConnect.Tests.Engine.HistoricalData
             {
                 HistoryProvider = historyProviders
             };
-            _historyProviderWrapper.SetBrokerage(new PaperBrokerage(null, null));
+            _paperBrokerage = new PaperBrokerage(null, null);
+            _historyProviderWrapper.SetBrokerage(_paperBrokerage);
             _historyProviderWrapper.Initialize(new HistoryProviderInitializeParameters(
                 jobWithArrayHistoryProviders,
                 null,
                 TestGlobals.DataProvider,
-                _zipCache,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 null,
                 false,
-                new DataPermissionManager()));
+                new DataPermissionManager(),
+                null,
+                new AlgorithmSettings()));
         }
 
         [TearDown]
         public void TearDown()
         {
-            _zipCache.DisposeSafely();
             Composer.Instance.Reset();
+            _paperBrokerage.DisposeSafely();
         }
 
         [Test]
@@ -70,24 +71,12 @@ namespace QuantConnect.Tests.Engine.HistoricalData
         {
             var symbol = Symbol.Create("WM", SecurityType.Equity, Market.USA);
 
-            var result = _historyProviderWrapper.GetHistory(
-                new[]
-                {
-                    new HistoryRequest(new DateTime(2008, 01,01),
-                        new DateTime(2008, 01,05),
-                        typeof(TradeBar),
-                        symbol,
-                        Resolution.Daily,
-                        SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                        TimeZones.NewYork,
-                        null,
-                        false,
-                        false,
-                        DataNormalizationMode.Raw,
-                        TickType.Trade)
-                },
-                TimeZones.NewYork).ToList();
+            var request = TestsHelpers.GetHistoryRequest(symbol, new DateTime(2008, 01, 01), new DateTime(2008, 01, 05), Resolution.Daily, TickType.Trade);
 
+            var result = _historyProviderWrapper.GetHistory(new[] { request }, TimeZones.NewYork).ToList();
+
+            Assert.IsNotNull(result);
+            Assert.IsNotEmpty(result);
             Assert.AreEqual(5, _historyProviderWrapper.DataPointCount);
         }
 
@@ -125,23 +114,9 @@ namespace QuantConnect.Tests.Engine.HistoricalData
                 32,
                 new DateTime(2013, 07, 20));
 
-            var result = _historyProviderWrapper.GetHistory(
-                new[]
-                {
-                    new HistoryRequest(new DateTime(2013, 06,28),
-                        new DateTime(2013, 07,03),
-                        typeof(QuoteBar),
-                        symbol,
-                        Resolution.Minute,
-                        SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                        TimeZones.NewYork,
-                        null,
-                        false,
-                        false,
-                        DataNormalizationMode.Raw,
-                        TickType.Quote)
-                },
-                TimeZones.NewYork).ToList();
+            var request = TestsHelpers.GetHistoryRequest(symbol, new DateTime(2013, 06, 28), new DateTime(2013, 07, 03), Resolution.Minute, TickType.Quote);
+
+            var result = _historyProviderWrapper.GetHistory(new[] { request }, TimeZones.NewYork).ToList();
 
             Assert.IsNotEmpty(result);
 
@@ -162,23 +137,9 @@ namespace QuantConnect.Tests.Engine.HistoricalData
         {
             var symbol = Symbol.Create("WM", SecurityType.Equity, Market.USA);
 
-            var result = _historyProviderWrapper.GetHistory(
-                new[]
-                {
-                    new HistoryRequest(new DateTime(2008, 01,01),
-                        new DateTime(2008, 01,05),
-                        typeof(TradeBar),
-                        symbol,
-                        Resolution.Daily,
-                        SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                        TimeZones.NewYork,
-                        null,
-                        false,
-                        false,
-                        DataNormalizationMode.Raw,
-                        TickType.Trade)
-                },
-                TimeZones.NewYork).ToList();
+            var request = TestsHelpers.GetHistoryRequest(symbol, new DateTime(2008, 01, 01), new DateTime(2008, 01, 05), Resolution.Daily, TickType.Trade);
+
+            var result = _historyProviderWrapper.GetHistory(new[] { request }, TimeZones.NewYork).ToList();
 
             Assert.IsNotEmpty(result);
             var firstBar = result.First().Values.Single();
@@ -192,23 +153,9 @@ namespace QuantConnect.Tests.Engine.HistoricalData
         {
             var symbol = Symbol.Create("WM", SecurityType.Equity, Market.USA);
 
-            var result = _historyProviderWrapper.GetHistory(
-                new[]
-                {
-                    new HistoryRequest(new DateTime(2008, 01,01),
-                        new DateTime(2008, 01,05),
-                        typeof(TradeBar),
-                        symbol,
-                        Resolution.Daily,
-                        SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                        TimeZones.NewYork,
-                        null,
-                        false,
-                        false,
-                        DataNormalizationMode.Raw,
-                        TickType.Trade)
-                },
-                TimeZones.NewYork).ToList();
+            var request = TestsHelpers.GetHistoryRequest(symbol, new DateTime(2008, 01, 01), new DateTime(2008, 01, 05), Resolution.Daily, TickType.Trade);
+
+            var result = _historyProviderWrapper.GetHistory(new[] { request }, TimeZones.NewYork).ToList();
 
             var initialTime = DateTime.MinValue;
             foreach (var slice in result)
