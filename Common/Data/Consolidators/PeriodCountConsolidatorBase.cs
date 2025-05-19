@@ -256,6 +256,20 @@ namespace QuantConnect.Data.Consolidators
         }
 
         /// <summary>
+        /// Resets the consolidator
+        /// </summary>
+        public override void Reset()
+        {
+            base.Reset();
+            _securityIdentifier = null;
+            _securityIdentifierIsSet = false;
+            _currentCount = 0;
+            _workingBar = null;
+            _lastEmit = null;
+            _validateTimeSpan = false;
+        }
+
+        /// <summary>
         /// Returns true if this consolidator is time-based, false otherwise
         /// </summary>
         protected bool IsTimeBased => !_maxCount.HasValue;
@@ -308,10 +322,21 @@ namespace QuantConnect.Data.Consolidators
         protected DateTime GetRoundedBarTime(IBaseData inputData)
         {
             var potentialStartTime = GetRoundedBarTime(inputData.Time);
-            if(_period.HasValue && potentialStartTime + _period < inputData.EndTime)
+            if (_period.HasValue && potentialStartTime + _period < inputData.EndTime)
             {
-                // whops! the end time we were giving is beyond our potential end time, so let's use the giving bars star time instead
-                potentialStartTime = inputData.Time;
+                // US equity hour bars from the database starts at 9am but the exchange opens at 9:30am. Thus, the method
+                // GetRoundedBarTime(inputData.Time) returns the market open of the previous day, which is not consistent
+                // with the given end time. For that reason we need to handle this case specifically, by calling
+                // GetRoundedBarTime(inputData.EndTime) as it will return our expected start time: 9:30am
+                if (inputData.EndTime - inputData.Time == Time.OneHour && potentialStartTime.Date < inputData.Time.Date)
+                {
+                    potentialStartTime = GetRoundedBarTime(inputData.EndTime);
+                }
+                else
+                {
+                    // whops! the end time we were giving is beyond our potential end time, so let's use the giving bars star time instead
+                    potentialStartTime = inputData.Time;
+                }
             }
 
             return potentialStartTime;

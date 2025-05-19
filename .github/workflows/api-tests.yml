@@ -9,14 +9,19 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     # Only run on push events (not on pull_request) for security reasons in order to be able to use secrets
     if: ${{ github.event_name == 'push' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Free space
-        run: df -h && rm -rf /usr/share/dotnet && sudo rm -rf /usr/local/lib/android && sudo rm -rf /opt/ghc && rm -rf /opt/hostedtoolcache* && df -h
+      - name: Liberate disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
       - name: Run API Tests
         uses: addnab/docker-run-action@v3
         with:
@@ -27,4 +32,4 @@ jobs:
             # Build
             dotnet build /p:Configuration=Release /v:quiet /p:WarningLevel=1 QuantConnect.Lean.sln
             # Run Projects tests
-            dotnet test ./Tests/bin/Release/QuantConnect.Tests.dll --blame-hang-timeout 300seconds --blame-crash --filter "FullyQualifiedName=QuantConnect.Tests.API.ProjectTests|ObjectStoreTests" -- TestRunParameters.Parameter\(name=\"log-handler\", value=\"ConsoleErrorLogHandler\"\)
+            dotnet test ./Tests/bin/Release/QuantConnect.Tests.dll --blame-hang-timeout 7minutes --blame-crash --logger "console;verbosity=detailed" --filter "FullyQualifiedName=QuantConnect.Tests.API.ProjectTests|FullyQualifiedName=QuantConnect.Tests.API.ObjectStoreTests" -- TestRunParameters.Parameter\(name=\"log-handler\", value=\"ConsoleErrorLogHandler\"\)

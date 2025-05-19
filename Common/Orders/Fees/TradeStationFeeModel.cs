@@ -35,6 +35,11 @@ namespace QuantConnect.Orders.Fees
         private const decimal _equityOptionFee = 0.6m;
 
         /// <summary>
+        /// Represents the fee associated with index options transactions (per contract).
+        /// </summary>
+        private const decimal _indexOptionFee = 1m;
+
+        /// <summary>
         /// Represents the fee associated with futures transactions (per contract, per side).
         /// </summary>
         private const decimal _futuresFee = 1.5m;
@@ -50,7 +55,19 @@ namespace QuantConnect.Orders.Fees
         /// <value>
         /// <c>true</c> if the entity or person is a US resident; otherwise, <c>false</c>.
         /// </value>
-        public bool USResident { get; set; } = true;
+        public bool USResident { get; set; }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TradeStationFeeModel"/> class.
+        /// </summary>
+        /// <param name="usResident">
+        /// A boolean value indicating whether the entity or person is a US resident.
+        /// Default is <c>true</c>.
+        /// </param>
+        public TradeStationFeeModel(bool usResident = true)
+        {
+            USResident = usResident;
+        }
 
         /// <summary>
         /// Calculates the order fee based on the security type and order parameters.
@@ -73,6 +90,8 @@ namespace QuantConnect.Orders.Fees
             {
                 case SecurityType.Option:
                     return new OrderFee(new CashAmount(CommissionPerTrade + parameters.Order.AbsoluteQuantity * _equityOptionFee, Currencies.USD));
+                case SecurityType.IndexOption:
+                    return new OrderFee(new CashAmount(CommissionPerTrade + parameters.Order.AbsoluteQuantity * _indexOptionFee, Currencies.USD));
                 case SecurityType.Future:
                     return new OrderFee(new CashAmount(parameters.Order.AbsoluteQuantity * _futuresFee, Currencies.USD));
                 default:

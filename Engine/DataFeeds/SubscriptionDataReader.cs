@@ -28,6 +28,7 @@ using QuantConnect.Data.Auxiliary;
 using QuantConnect.Data.Custom.Tiingo;
 using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
 using QuantConnect.Securities;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -252,9 +253,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
             _delistingDate = _config.Symbol.GetDelistingDate(_mapFile);
 
-            // adding a day so we stop at EOD
-            _delistingDate = _delistingDate.AddDays(1);
-
             _timeKeeper = new DateChangeTimeKeeper(_tradableDatesInDataTimeZone, _config, _exchangeHours, _delistingDate);
             _timeKeeper.NewExchangeDate += HandleNewTradableDate;
 
@@ -320,10 +318,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     // Advance the time keeper either until the current instance time (to synchronize) or until the source changes.
                     // Note: use time instead of end time to avoid skipping instances that all have the same timestamps in the same file (e.g. universe data)
                     var currentSource = _source;
-                    var nextExchangeDate = _config.Resolution == Resolution.Daily && _timeKeeper.IsExchangeBehindData()
+                    var nextExchangeDate = _config.Resolution == Resolution.Daily
+                        && _timeKeeper.IsExchangeBehindData()
+                        && !_config.Type.IsAssignableTo(typeof(BaseDataCollection))
                         // If daily and exchange is behind data, data for date X will have a start time within date X-1,
                         // so we use the actual date from end time. e.g. a daily bar for Jan15 can have a start time of Jan14 8PM
                         // (exchange tz 4 hours behind data tz) and end time would be Jan15 8PM.
+                        // This doesn't apply to universe files (BaseDataCollection check) because they are not read in the same way
+                        // price daily files are read: they are read in a collection with end time of X+1. We don't want to skip them or advance time yet.
                         ? instance.EndTime
                         : instance.Time;
                     while (_timeKeeper.ExchangeTime < nextExchangeDate && currentSource == _source)
@@ -561,13 +563,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 date = _timeKeeper.DataTime.Date;
 
-                if (_pastDelistedDate || date > _delistingDate)
-                {
-                    // if we already passed our delisting date we stop
-                    _pastDelistedDate = true;
-                    break;
-                }
-
                 if (!_mapFile.HasData(date))
                 {
                     continue;
@@ -581,6 +576,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                 // we've passed initial checks,now go get data for this date!
                 return true;
+            }
+
+            if (_timeKeeper.ExchangeTime.Date > _delistingDate)
+            {
+                _pastDelistedDate = true;
             }
 
             // no more tradeable dates, we've exhausted the enumerator

@@ -21,6 +21,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using QuantConnect.Python;
 
 namespace QuantConnect.Data.Market
 {
@@ -40,6 +41,7 @@ namespace QuantConnect.Data.Market
         /// Type of the Tick: Trade or Quote.
         /// </summary>
         [ProtoMember(10)]
+        [PandasIgnore]
         public TickType TickType { get; set; } = TickType.Trade;
 
         /// <summary>
@@ -51,6 +53,7 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// Exchange code this tick came from <see cref="Exchanges"/>
         /// </summary>
+        [PandasIgnore]
         public string ExchangeCode
         {
             get
@@ -94,12 +97,14 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// Sale condition for the tick.
         /// </summary>
+        [PandasIgnore]
         public string SaleCondition { get; set; } = string.Empty;
 
         /// <summary>
         /// For performance parsed sale condition for the tick.
         /// </summary>
         [JsonIgnore]
+        [PandasIgnore]
         public uint ParsedSaleCondition
         {
             get
@@ -706,6 +711,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">Date of this reader request</param>
         /// <param name="isLiveMode">true if we're in live mode, false for backtesting mode</param>
         /// <returns>New Initialized tick</returns>
+        [StubsIgnore]
         public override BaseData Reader(SubscriptionDataConfig config, StreamReader stream, DateTime date, bool isLiveMode)
         {
             if (isLiveMode)

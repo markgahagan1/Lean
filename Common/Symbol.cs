@@ -19,6 +19,7 @@ using ProtoBuf;
 using Python.Runtime;
 using Newtonsoft.Json;
 using QuantConnect.Securities;
+using QuantConnect.Python;
 
 namespace QuantConnect
 {
@@ -29,7 +30,8 @@ namespace QuantConnect
     /// </summary>
     [JsonConverter(typeof(SymbolJsonConverter))]
     [ProtoContract(SkipConstructor = true)]
-    public sealed class Symbol : IEquatable<Symbol>, IComparable, ISymbol
+    [PandasNonExpandable]
+    public sealed class Symbol : IEquatable<Symbol>, IComparable
     {
         private static readonly Lazy<SecurityDefinitionSymbolResolver> _securityDefinitionSymbolResolver = new (() => SecurityDefinitionSymbolResolver.GetInstance());
 

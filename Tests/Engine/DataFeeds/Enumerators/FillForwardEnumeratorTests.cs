@@ -126,7 +126,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 
             Assert.IsTrue(fillForwardEnumerator.MoveNext());
             // Time should advance!
-            Assert.AreEqual(new DateTime(2017, 7, 22, 17, 1, 0), fillForwardEnumerator.Current.Time);
+            // Time should be 10:01am to 5:01pm, on Sundays the market opens at 5pm, so the market duration is 7 hours
+            var expectedTime = strictEndTimes ? new DateTime(2017, 7, 23, 10, 1, 0) : new DateTime(2017, 7, 22, 17, 1, 0);
+            Assert.AreEqual(expectedTime, fillForwardEnumerator.Current.Time);
             Assert.AreEqual(new DateTime(2017, 7, 23, 17, 1, 0), fillForwardEnumerator.Current.EndTime);
             Assert.AreEqual(1, fillForwardEnumerator.Current.Value);
             Assert.AreEqual(0, (fillForwardEnumerator.Current as TradeBar).Volume);
@@ -775,6 +777,80 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
         }
 
         [Test]
+        public void FillForwardsDailyMissingDaysRespectingEarlyClose()
+        {
+            var symbol = Symbols.SPY;
+            var dataResolution = Time.OneDay;
+            var commonMarketDuration = new TimeSpan(6, 30, 0);
+            var startTimeOfDay = new TimeSpan(9, 30, 0);
+            var reference = new DateTime(2015, 11, 25).Add(startTimeOfDay);
+
+            var data = new BaseData[]
+            {
+                // wed 11/25
+                new TradeBar {Value = 0, Time = reference, Period = commonMarketDuration, Volume = 100},
+                // tue 12/1
+                new TradeBar {Value = 1, Time = reference.AddDays(6), Period = commonMarketDuration, Volume = 200},
+            }.ToList();
+            var enumerator = data.GetEnumerator();
+
+            var exchange = new SecurityExchange(MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType));
+            var isExtendedMarketHours = false;
+            using var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, Ref.Create(TimeSpan.FromDays(1)), isExtendedMarketHours,
+                data[^1].EndTime.Date.AddDays(1), dataResolution, exchange.TimeZone, dailyStrictEndTimeEnabled: true);
+
+            var dataReferenceTime = reference;
+            var dataReferenceEndTime = reference.Add(commonMarketDuration);
+
+            // wed 11/25
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(dataReferenceTime, fillForwardEnumerator.Current.Time);
+            Assert.AreEqual(dataReferenceEndTime, fillForwardEnumerator.Current.EndTime);
+            Assert.AreEqual(0, fillForwardEnumerator.Current.Value);
+            Assert.IsFalse(fillForwardEnumerator.Current.IsFillForward);
+            Assert.AreEqual(commonMarketDuration, ((TradeBar)fillForwardEnumerator.Current).Period);
+            Assert.AreEqual(100, ((TradeBar)fillForwardEnumerator.Current).Volume);
+
+            // thu 11/26 (no data, holiday)
+
+            // fri 11/27 (early close: 1pm)
+            dataReferenceTime = dataReferenceTime.AddDays(2);
+            dataReferenceEndTime = dataReferenceEndTime.AddDays(2);
+            var earlyClose = dataReferenceEndTime.Date.Add(TimeSpan.FromHours(13));
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(dataReferenceTime, fillForwardEnumerator.Current.Time);
+            Assert.AreEqual(earlyClose, fillForwardEnumerator.Current.EndTime);
+            Assert.AreEqual(0, fillForwardEnumerator.Current.Value);
+            Assert.IsTrue(fillForwardEnumerator.Current.IsFillForward);
+            Assert.AreEqual(earlyClose - dataReferenceTime, ((TradeBar)fillForwardEnumerator.Current).Period);
+            Assert.AreEqual(0, ((TradeBar)fillForwardEnumerator.Current).Volume);
+
+            // mon 11/30
+            dataReferenceTime = dataReferenceTime.AddDays(3);
+            dataReferenceEndTime = dataReferenceEndTime.AddDays(3);
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(dataReferenceTime, fillForwardEnumerator.Current.Time);
+            Assert.AreEqual(dataReferenceEndTime, fillForwardEnumerator.Current.EndTime);
+            Assert.AreEqual(0, fillForwardEnumerator.Current.Value);
+            Assert.IsTrue(fillForwardEnumerator.Current.IsFillForward);
+            Assert.AreEqual(commonMarketDuration, ((TradeBar)fillForwardEnumerator.Current).Period);
+            Assert.AreEqual(0, ((TradeBar)fillForwardEnumerator.Current).Volume);
+
+            // tue 12/1
+            dataReferenceTime = dataReferenceTime.AddDays(1);
+            dataReferenceEndTime = dataReferenceEndTime.AddDays(1);
+            Assert.IsTrue(fillForwardEnumerator.MoveNext());
+            Assert.AreEqual(dataReferenceTime, fillForwardEnumerator.Current.Time);
+            Assert.AreEqual(dataReferenceEndTime, fillForwardEnumerator.Current.EndTime);
+            Assert.AreEqual(1, fillForwardEnumerator.Current.Value);
+            Assert.IsFalse(fillForwardEnumerator.Current.IsFillForward);
+            Assert.AreEqual(commonMarketDuration, ((TradeBar)fillForwardEnumerator.Current).Period);
+            Assert.AreEqual(200, ((TradeBar)fillForwardEnumerator.Current).Volume);
+
+            Assert.IsFalse(fillForwardEnumerator.MoveNext());
+        }
+
+        [Test]
         public void FillsForwardHoursAtEndOfDayByHalfHour()
         {
             var dataResolution = Time.OneHour;
@@ -1266,7 +1342,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
 #pragma warning disable CS0162 // Unreachable code detected; used to store expected data
                 QuantConnect.Compression.ZipCreateAppendData(
                     "../../TestData/FillForwardBars.zip", expectedDataFile, FillForwardTestAlgorithm.Result.Value, overrideEntry: true);
-#pragma warning restore CS0162 
+#pragma warning restore CS0162
             }
             QuantConnect.Compression.Unzip("TestData/FillForwardBars.zip", "./", overwrite: true);
             var expected = File.ReadAllLines(expectedDataFile);
@@ -2247,6 +2323,131 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators
                 counter);
 
             fillForwardEnumerator.Dispose();
+        }
+
+        [Test]
+        public void FillForwardIsSkippedWhenLateOpenAtMarketEnd()
+        {
+            // Set resolution for data and fill forward to one day
+            var dataResolution = Time.OneDay;
+            var fillForwardResolution = Time.OneDay;
+
+            // Define the initial time and subscription end time
+            var time = new DateTime(2020, 6, 28, 8, 30, 0);
+            var subscriptionEndTime = time.AddDays(30);
+
+            var enumerator = new List<BaseData>
+            {
+                new TradeBar { Time = new DateTime(2020, 6, 28, 8, 30, 0), EndTime = new DateTime(2020, 6, 28, 16, 0, 0), Value = 1, Volume = 100},
+                new TradeBar { Time = new DateTime(2020, 7, 6, 8, 30, 0), EndTime = new DateTime(2020, 7, 6, 16, 0, 0), Value = 1, Volume = 100},
+            }.GetEnumerator();
+
+            // LateOpen occurs at 4:00 PM meaning the market is closed
+            var lateOpenTime = new DateTime(2020, 7, 3, 16, 0, 0);
+            var exchangeHours = CreateCustomFutureExchangeHours(new DateTime(), lateOpenTime);
+            var exchange = new SecurityExchange(exchangeHours);
+            using var fillForwardEnumerator = new FillForwardEnumerator(enumerator, exchange, Ref.Create(fillForwardResolution), false, subscriptionEndTime, dataResolution, exchange.TimeZone, true);
+
+            // Date to check for late open
+            int dataCount = 0;
+
+            // Set to store unique dates
+            SortedSet<DateTime> uniqueDates = new SortedSet<DateTime>();
+
+            // Iterate through the enumerator
+            while (fillForwardEnumerator.MoveNext())
+            {
+                var currentValue = fillForwardEnumerator.Current;
+
+                // Add unique end time to the sorted set and increment data count
+                uniqueDates.Add(currentValue.EndTime);
+                dataCount++;
+
+                // Ensure that no fill forward occurs on the late open date (5 PM)
+                Assert.AreNotEqual(lateOpenTime.Date, currentValue.EndTime);
+                Assert.IsFalse(fillForwardEnumerator.Current.EndTime > subscriptionEndTime);
+            }
+
+            // Ensure there are no duplicate dates in the result
+            Assert.AreEqual(dataCount, uniqueDates.Count);
+        }
+
+        private static SecurityExchangeHours CreateCustomFutureExchangeHours(DateTime earlyClose, DateTime lateOpen)
+        {
+            var sunday = new LocalMarketHours(
+                DayOfWeek.Sunday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(17, 0, 0), new TimeSpan(25, 0, 0)) // 1.00:00:00 = 25 horas
+            );
+
+            var monday = new LocalMarketHours(
+                DayOfWeek.Monday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(0, 0, 0), new TimeSpan(8, 30, 0)),
+                new MarketHoursSegment(MarketHoursState.Market, new TimeSpan(8, 30, 0), new TimeSpan(16, 0, 0)),
+                new MarketHoursSegment(MarketHoursState.PostMarket, new TimeSpan(17, 0, 0), new TimeSpan(25, 0, 0))
+            );
+
+            var tuesday = new LocalMarketHours(
+                DayOfWeek.Tuesday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(0, 0, 0), new TimeSpan(8, 30, 0)),
+                new MarketHoursSegment(MarketHoursState.Market, new TimeSpan(8, 30, 0), new TimeSpan(16, 0, 0)),
+                new MarketHoursSegment(MarketHoursState.PostMarket, new TimeSpan(17, 0, 0), new TimeSpan(25, 0, 0))
+            );
+
+            var wednesday = new LocalMarketHours(
+                DayOfWeek.Wednesday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(0, 0, 0), new TimeSpan(8, 30, 0)),
+                new MarketHoursSegment(MarketHoursState.Market, new TimeSpan(8, 30, 0), new TimeSpan(16, 0, 0)),
+                new MarketHoursSegment(MarketHoursState.PostMarket, new TimeSpan(17, 0, 0), new TimeSpan(25, 0, 0))
+            );
+
+            var thursday = new LocalMarketHours(
+                DayOfWeek.Thursday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(0, 0, 0), new TimeSpan(8, 30, 0)),
+                new MarketHoursSegment(MarketHoursState.Market, new TimeSpan(8, 30, 0), new TimeSpan(16, 0, 0)),
+                new MarketHoursSegment(MarketHoursState.PostMarket, new TimeSpan(17, 0, 0), new TimeSpan(25, 0, 0))
+            );
+
+            var friday = new LocalMarketHours(
+                DayOfWeek.Friday,
+                new MarketHoursSegment(MarketHoursState.PreMarket, new TimeSpan(0, 0, 0), new TimeSpan(8, 30, 0)),
+                new MarketHoursSegment(MarketHoursState.Market, new TimeSpan(8, 30, 0), new TimeSpan(16, 0, 0))
+            );
+
+            var saturday = LocalMarketHours.ClosedAllDay(DayOfWeek.Saturday);
+
+            var earlyCloses = new Dictionary<DateTime, TimeSpan>
+            {
+                { earlyClose.Date, earlyClose.TimeOfDay }
+            };
+
+            var lateOpens = new Dictionary<DateTime, TimeSpan>
+            {
+                { lateOpen.Date, lateOpen.TimeOfDay }
+            };
+
+            var holidays = new List<DateTime>
+            {
+                new DateTime(2025, 4, 18)
+            };
+
+            var exchangeHours = new SecurityExchangeHours(
+                TimeZones.Chicago,
+                holidays,
+                new[]
+                {
+                    sunday,
+                    monday,
+                    tuesday,
+                    wednesday,
+                    thursday,
+                    friday,
+                    saturday
+                }.ToDictionary(x => x.DayOfWeek),
+                earlyCloses,
+                lateOpens
+            );
+
+            return exchangeHours;
         }
 
         public class FillForwardTestAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition

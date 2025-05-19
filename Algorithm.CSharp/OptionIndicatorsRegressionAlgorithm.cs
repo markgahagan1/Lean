@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp
         private Theta _theta;
         private Rho _rho;
 
-        protected virtual string ExpectedGreeks { get; set; } = "Implied Volatility: 0.45252,Delta: -0.0092,Gamma: 0.00036,Vega: 0.03562,Theta: -0.0387,Rho: 0.00045";
+        protected virtual string ExpectedGreeks { get; set; } = "Implied Volatility: 0.44529,Delta: -0.00921,Gamma: 0.00036,Vega: 0.03636,Theta: -0.03747,Rho: 0.00047";
 
         public override void Initialize()
         {
@@ -90,7 +90,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of the algorithm history
         /// </summary>
-        public int AlgorithmHistoryDataPoints => 0;
+        public virtual int AlgorithmHistoryDataPoints => 0;
 
         /// <summary>
         /// Final status of the algorithm

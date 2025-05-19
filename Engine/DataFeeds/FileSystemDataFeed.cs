@@ -100,15 +100,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         private IEnumerator<BaseData> CreateDataEnumerator(SubscriptionRequest request, Resolution? fillForwardResolution)
         {
             // ReSharper disable once PossibleMultipleEnumeration
-            if (!request.TradableDaysInDataTimeZone.Any())
-            {
-                _algorithm.Error(
-                    $"No data loaded for {request.Security.Symbol} because there were no tradeable dates for this security."
-                );
-                return null;
-            }
-
-            // ReSharper disable once PossibleMultipleEnumeration
             var enumerator = _subscriptionFactory.CreateEnumerator(request, _dataProvider);
             enumerator = ConfigureEnumerator(request, false, enumerator, fillForwardResolution);
 
@@ -200,24 +191,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             else if (request.Configuration.Type == typeof(FundamentalUniverse))
             {
                 factory = new BaseDataCollectionSubscriptionEnumeratorFactory(_algorithm.ObjectStore);
-            }
-            else if (request.Configuration.Type == typeof(ZipEntryName))
-            {
-                // TODO: subscription should already come in correctly built
-                var resolution = request.Configuration.Resolution == Resolution.Tick ? Resolution.Second : request.Configuration.Resolution;
-
-                // TODO: subscription should already come in as fill forward true
-                request = new SubscriptionRequest(request, configuration: new SubscriptionDataConfig(request.Configuration, fillForward: true, resolution: resolution));
-
-                var result = new BaseDataSubscriptionEnumeratorFactory(_algorithm.OptionChainProvider, _algorithm.FutureChainProvider)
-                    .CreateEnumerator(request, _dataProvider);
-
-                if (LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol, request.Configuration.Increment))
-                {
-                    result = new StrictDailyEndTimesEnumerator(result, request.ExchangeHours, request.StartTimeLocal);
-                }
-                result = ConfigureEnumerator(request, true, result, fillForwardResolution);
-                return TryAppendUnderlyingEnumerator(request, result, createUnderlyingEnumerator, fillForwardResolution);
             }
 
             // define our data enumerator
@@ -333,9 +306,16 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     fillForwardSpan = Ref.Create(fillForwardResolution.Value.ToTimeSpan());
                 }
 
-                var useDailyStrictEndTimes = LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol, request.Configuration.Increment);
-                enumerator = new FillForwardEnumerator(enumerator, request.Security.Exchange, fillForwardSpan, request.Configuration.ExtendedMarketHours, request.EndTimeLocal,
-                    request.Configuration.Increment, request.Configuration.DataTimeZone, useDailyStrictEndTimes);
+                // Pass the security exchange hours explicitly to avoid using the ones in the request, since
+                // those could be different. e.g. when requests are created for open interest data the exchange
+                // hours are set to always open to avoid OI data being filtered out due to the exchange being closed.
+                // This way we allow OI data to be fill-forwarded to the market close time when strict end times is enabled,
+                // so that OI data is available at the same time as trades and quotes.
+                var useDailyStrictEndTimes = LeanData.UseDailyStrictEndTimes(_algorithm.Settings, request, request.Configuration.Symbol,
+                    request.Configuration.Increment, request.Security.Exchange.Hours);
+                enumerator = new FillForwardEnumerator(enumerator, request.Security.Exchange, fillForwardSpan,
+                    request.Configuration.ExtendedMarketHours, request.EndTimeLocal, request.Configuration.Increment,
+                    request.Configuration.DataTimeZone, useDailyStrictEndTimes, request.Configuration.Type);
             }
 
             return enumerator;

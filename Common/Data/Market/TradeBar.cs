@@ -21,6 +21,7 @@ using QuantConnect.Util;
 using System.Globalization;
 using QuantConnect.Logging;
 using static QuantConnect.StringExtensions;
+using QuantConnect.Python;
 
 namespace QuantConnect.Data.Market
 {
@@ -104,6 +105,7 @@ namespace QuantConnect.Data.Market
         /// <summary>
         /// The closing time of this bar, computed via the Time and Period
         /// </summary>
+        [PandasIgnore]
         public override DateTime EndTime
         {
             get { return Time + Period; }
@@ -114,6 +116,7 @@ namespace QuantConnect.Data.Market
         /// The period of this trade bar, (second, minute, daily, ect...)
         /// </summary>
         [ProtoMember(106)]
+        [PandasIgnore]
         public virtual TimeSpan Period { get; set; }
 
         //In Base Class: Alias of Closing:
@@ -253,6 +256,7 @@ namespace QuantConnect.Data.Market
         /// <param name="date">Date of this reader request</param>
         /// <param name="isLiveMode">true if we're in live mode, false for backtesting mode</param>
         /// <returns>Enumerable iterator for returning each line of the required data.</returns>
+        [StubsIgnore]
         public override BaseData Reader(SubscriptionDataConfig config, StreamReader stream, DateTime date, bool isLiveMode)
         {
             //Handle end of file:

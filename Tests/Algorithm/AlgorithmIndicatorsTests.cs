@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Moq;
 using NUnit.Framework;
@@ -24,6 +25,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
+using QuantConnect.Python;
 using QuantConnect.Tests.Engine.DataFeeds;
 using QuantConnect.Tests.Research;
 
@@ -331,6 +333,17 @@ namespace QuantConnect.Tests.Algorithm
         }
 
         [Test]
+        public void IndicatorCanBeWarmedUpWithoutSymbolInSecurities()
+        {
+            var referenceSymbol = Symbol.Create("IBM", SecurityType.Equity, Market.USA);
+            var indicator = new SimpleMovingAverage("SMA", 100);
+            _algorithm.SetDateTime(new DateTime(2013, 10, 11));
+            Assert.DoesNotThrow(() => _algorithm.WarmUpIndicator(referenceSymbol, indicator, TimeSpan.FromMinutes(60)));
+            Assert.IsTrue(indicator.IsReady);
+            Assert.IsTrue(indicator.Samples >= 100);
+        }
+
+        [Test]
         public void PythonCustomIndicatorCanBeWarmedUpWithTimespan()
         {
             var referenceSymbol = Symbol.Create("IBM", SecurityType.Equity, Market.USA);
@@ -387,8 +400,8 @@ class CustomSimpleMovingAverage(PythonIndicator):
             }
 
             Assert.IsTrue(indicator.IsReady);
-            Assert.AreEqual(0.9942984m, indicator.Current.Value);
-            Assert.AreEqual(0.3516544m, indicator.ImpliedVolatility.Current.Value);
+            Assert.AreEqual(0.9942989m, indicator.Current.Value);
+            Assert.AreEqual(0.3514844m, indicator.ImpliedVolatility.Current.Value);
             Assert.AreEqual(390, indicatorValues.Count);
 
             var lastData = indicatorValues.Current.Last();
@@ -473,6 +486,92 @@ class GoodCustomIndicator:
             Assert.IsTrue(indicator.IsReady);
         }
 
+        [Test]
+        public void IndicatorHistoryIsSupportedInPythonForOptionsIndicators([Range(1, 4)] int overload, [Values] bool useMirrorContract)
+        {
+            _algorithm.SetDateTime(new DateTime(2014, 06, 07));
+
+            var contract = Symbol.CreateOption("AAPL", Market.USA, OptionStyle.American, OptionRight.Call, 505, new DateTime(2014, 6, 27));
+            var mirrorContract = useMirrorContract
+                ? Symbol.CreateOption("AAPL", Market.USA, OptionStyle.American, OptionRight.Put, 505, new DateTime(2014, 6, 27))
+                : null;
+            var underlying = contract.Underlying;
+
+            var indicator = new ImpliedVolatility(contract, optionModel: OptionPricingModelType.BlackScholes, mirrorOption: mirrorContract);
+
+            using var _ = Py.GIL();
+
+            using var pyIndicator = indicator.ToPython();
+            var symbols = useMirrorContract ? new[] { contract, mirrorContract, underlying } : new[] { contract, underlying };
+            using var pySymbols = symbols.ToPyListUnSafe();
+
+            var symbolsHistory = overload != 4
+                ? null
+                : _algorithm.History(symbols, TimeSpan.FromDays(2), Resolution.Minute);
+
+            var indicatorHistory = overload switch
+            {
+                1 => _algorithm.IndicatorHistory(pyIndicator, pySymbols, TimeSpan.FromDays(2), Resolution.Minute),
+                2 => _algorithm.IndicatorHistory(pyIndicator, pySymbols, 60 * 24 * 2, Resolution.Minute),
+                3 => _algorithm.IndicatorHistory(pyIndicator, pySymbols, new DateTime(2014, 6, 6), new DateTime(2014, 6, 7), Resolution.Minute),
+                4 => _algorithm.IndicatorHistory(pyIndicator, symbolsHistory),
+                _ => throw new ArgumentOutOfRangeException(nameof(overload), "Invalid overload")
+            };
+
+            Assert.AreEqual(390, indicatorHistory.Count);
+
+            using var dataFrame = indicatorHistory.DataFrame;
+            Assert.AreEqual(390, dataFrame.GetAttr("shape")[0].GetAndDispose<int>());
+            // Assert dataframe column names are current, price, oppositeprice and underlyingprice
+            var columns = dataFrame.GetAttr("columns").InvokeMethod<List<string>>("tolist");
+            var expectedColumns = new[] { "current", "price", "oppositeprice", "underlyingprice" };
+            CollectionAssert.AreEquivalent(expectedColumns, columns);
+        }
+
+        [Test]
+        public void WarmUpIndicatorIsSupportedInPythonForOptionsIndicators([Values(1, 2)] int overload, [Values] bool useMirrorContract)
+        {
+            _algorithm.SetDateTime(new DateTime(2014, 06, 07));
+
+            var contract = Symbol.CreateOption("AAPL", Market.USA, OptionStyle.American, OptionRight.Call, 505, new DateTime(2014, 07, 19));
+            var mirrorContract = useMirrorContract
+                ? Symbol.CreateOption("AAPL", Market.USA, OptionStyle.American, OptionRight.Put, 505, new DateTime(2014, 07, 19))
+                : null;
+            var underlying = contract.Underlying;
+
+            var indicator = new ImpliedVolatility(contract, optionModel: OptionPricingModelType.BlackScholes, mirrorOption: mirrorContract);
+
+            using var _ = Py.GIL();
+
+            using var pyIndicator = indicator.ToPython();
+            var symbols = useMirrorContract ? new[] { contract, mirrorContract, underlying } : new[] { contract, underlying };
+            using var pySymbols = symbols.ToPyListUnSafe();
+
+            switch (overload)
+            {
+                case 1:
+                    _algorithm.WarmUpIndicator(pySymbols, pyIndicator, TimeSpan.FromDays(1));
+                    break;
+
+                case 2:
+                    _algorithm.WarmUpIndicator(pySymbols, pyIndicator, Resolution.Daily);
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(overload), "Invalid overload");
+            }
+
+            Assert.IsTrue(indicator.IsReady);
+
+            if (useMirrorContract)
+            {
+                Assert.IsNotNull(indicator.OppositePrice);
+            }
+            else
+            {
+                Assert.IsNull(indicator.OppositePrice);
+            }
+        }
 
         private class CustomIndicator : IndicatorBase<QuoteBar>, IIndicatorWarmUpPeriodProvider
         {
@@ -485,6 +584,61 @@ class GoodCustomIndicator:
             {
                 _isReady = true;
                 return input.Ask.High;
+            }
+        }
+
+        [Test]
+        public void SupportsConversionToIndicatorBaseBaseDataCorrectly([Range(1, 6)] int scenario)
+        {
+            const string code = @"
+from AlgorithmImports import *
+from QuantConnect.Indicators import *
+
+def create_intraday_vwap_indicator(name):
+    return IntradayVwap(name)
+def create_consolidator():
+    return TradeBarConsolidator(Resolution.HOUR)
+";
+
+            using (Py.GIL())
+            {
+                var module = PyModule.FromString(Guid.NewGuid().ToString(), code);
+                string name = "test";
+
+                // Creates the IntradayVWAP (IndicatorBase<BaseData>)
+                var indicator = module.GetAttr("create_intraday_vwap_indicator").Invoke(name.ToPython());
+                var consolidator = module.GetAttr("create_consolidator").Invoke();
+                var SymbolList = new List<Symbol>
+                {
+                    Symbols.SPY,
+                    Symbols.IBM,
+                };
+
+                // Tests different scenarios based on the "scenario" parameter
+                switch (scenario)
+                {
+                    case 1:
+                        Assert.DoesNotThrow(() => _algorithm.RegisterIndicator(Symbols.SPY, indicator, consolidator));
+                        break;
+                    case 2:
+                        Assert.DoesNotThrow(() => _algorithm.WarmUpIndicator(SymbolList.ToPyList(), indicator));
+                        break;
+                    case 3:
+                        Assert.DoesNotThrow(() => _algorithm.WarmUpIndicator(SymbolList.ToPyList(), indicator, TimeSpan.FromDays(1)));
+                        break;
+                    case 4:
+                        Assert.DoesNotThrow(() => _algorithm.IndicatorHistory(indicator, SymbolList.ToPyList(), 10));
+                        break;
+                    case 5:
+                        Assert.DoesNotThrow(() => _algorithm.IndicatorHistory(indicator, SymbolList.ToPyList(), new DateTime(2014, 6, 6), new DateTime(2014, 6, 7)));
+                        break;
+                    case 6:
+                        var symbolsHistory = _algorithm.History(SymbolList, TimeSpan.FromDays(2), Resolution.Minute);
+                        Assert.DoesNotThrow(() => _algorithm.IndicatorHistory(indicator, symbolsHistory));
+                        break;
+                    default:
+                        break;
+                }
             }
         }
     }

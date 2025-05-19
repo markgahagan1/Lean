@@ -132,7 +132,12 @@ namespace QuantConnect.Data.Common
         {
             Initialize(data);
 
-            if (_extendedMarketHours || ExchangeHours.IsOpen(data.Time, false))
+            // US equity hour data from the database starts at 9am but the exchange opens at 9:30am. Thus, we need to handle
+            // this case specifically to avoid skipping the first hourly bar. To avoid this, we assert the period is daily,
+            // the data resolution is hour and the exchange opens at any point in time over the data.Time to data.EndTime interval
+            if (_extendedMarketHours ||
+                ExchangeHours.IsOpen(data.Time, false) ||
+                (Period == Time.OneDay && (data.EndTime - data.Time == Time.OneHour) && ExchangeHours.IsOpen(data.Time, data.EndTime, false)))
             {
                 Consolidator.Update(data);
             }
@@ -154,6 +159,17 @@ namespace QuantConnect.Data.Common
         {
             Consolidator.DataConsolidated -= ForwardConsolidatedBar;
             Consolidator.Dispose();
+        }
+
+        /// <summary>
+        /// Resets the consolidator
+        /// </summary>
+        public void Reset()
+        {
+            _useStrictEndTime = false;
+            ExchangeHours = null;
+            DataTimeZone = null;
+            Consolidator.Reset();
         }
 
         /// <summary>

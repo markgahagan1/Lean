@@ -19,6 +19,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using QuantConnect.Algorithm;
+using QuantConnect.Algorithm.Framework.Portfolio.SignalExports;
+using QuantConnect.AlgorithmFactory.Python.Wrappers;
 using QuantConnect.Brokerages;
 using QuantConnect.Brokerages.Backtesting;
 using QuantConnect.Interfaces;
@@ -38,6 +41,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
     public class BrokerageTransactionHandler : ITransactionHandler
     {
         private IAlgorithm _algorithm;
+        private SignalExportManager _signalExport;
         private IBrokerage _brokerage;
         private bool _brokerageIsBacktesting;
         private bool _loggedFeeAdjustmentWarning;
@@ -205,6 +209,12 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             IsActive = true;
 
             _algorithm = algorithm;
+
+            _signalExport = _algorithm is QCAlgorithm
+                ? (_algorithm as QCAlgorithm).SignalExport
+                : (_algorithm as AlgorithmPythonWrapper).SignalExport;
+
+            NewOrderEvent += (s, e) => _signalExport.OnOrderEvent(e);
             InitializeTransactionThread();
         }
 
@@ -659,6 +669,8 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 return;
             }
 
+            _signalExport.Flush(CurrentTimeUtc);
+
             // check if the brokerage should perform cash sync now
             if (!_algorithm.IsWarmingUp && _brokerage.ShouldPerformCashSync(CurrentTimeUtc))
             {
@@ -844,29 +856,9 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             }
 
             // check to see if we have enough money to place the order
-            HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
-            try
+            if (!HasSufficientBuyingPowerForOrders(order, request, out var validationResult, orders, securities))
             {
-                hasSufficientBuyingPowerResult = _algorithm.Portfolio.HasSufficientBuyingPowerForOrder(orders);
-            }
-            catch (Exception err)
-            {
-                Log.Error(err);
-                _algorithm.Error($"Order Error: id: {order.Id.ToStringInvariant()}, Error executing margin models: {err.Message}");
-                HandleOrderEvent(new OrderEvent(order,
-                    _algorithm.UtcTime,
-                    OrderFee.Zero,
-                    "Error executing margin models"));
-                return OrderResponse.Error(request, OrderResponseErrorCode.ProcessingError, "Error in GetSufficientCapitalForOrder");
-            }
-
-            if (!hasSufficientBuyingPowerResult.IsSufficient)
-            {
-                var errorMessage = securities.GetErrorMessage(hasSufficientBuyingPowerResult);
-                _algorithm.Error(errorMessage);
-
-                InvalidateOrders(orders, errorMessage);
-                return OrderResponse.Error(request, OrderResponseErrorCode.InsufficientBuyingPower, errorMessage);
+                return validationResult;
             }
 
             // verify that our current brokerage can actually take the order
@@ -957,6 +949,17 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     OrderFee.Zero,
                     "BrokerageModel declared unable to update order"));
                 return response;
+            }
+
+            // If the order is not part of a ComboLegLimit update, validate sufficient buying power
+            if (order.GroupOrderManager == null)
+            {
+                var updatedOrder = order.Clone();
+                updatedOrder.ApplyUpdateOrderRequest(request);
+                if (!HasSufficientBuyingPowerForOrders(updatedOrder, request, out var validationResult))
+                {
+                    return validationResult;
+                }
             }
 
             // modify the values of the order object
@@ -1057,6 +1060,53 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             return OrderResponse.Success(request);
         }
 
+        /// <summary>
+        /// Validates if there is sufficient buying power for the given order(s).
+        /// Returns an error response if validation fails or an exception occurs.
+        /// Returns null if validation passes.
+        /// </summary>
+        private bool HasSufficientBuyingPowerForOrders(Order order, OrderRequest request, out OrderResponse response, List<Order> orders = null, Dictionary<Order, Security> securities = null)
+        {
+            response = null;
+            HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
+            try
+            {
+                hasSufficientBuyingPowerResult = _algorithm.Portfolio.HasSufficientBuyingPowerForOrder(orders ?? [order]);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+                _algorithm.Error($"Order Error: id: {order.Id.ToStringInvariant()}, Error executing margin models: {err.Message}");
+                HandleOrderEvent(new OrderEvent(order, _algorithm.UtcTime, OrderFee.Zero, "Error executing margin models"));
+
+                response = OrderResponse.Error(request, OrderResponseErrorCode.ProcessingError, "An error occurred while checking sufficient buying power for the orders.");
+                return false;
+            }
+
+            if (!hasSufficientBuyingPowerResult.IsSufficient)
+            {
+                var errorMessage = securities != null
+                    ? securities.GetErrorMessage(hasSufficientBuyingPowerResult)
+                    : $"Brokerage failed to update order with id: {order.Id.ToStringInvariant()}, Symbol: {order.Symbol.Value}, Insufficient buying power to complete order, Reason: {hasSufficientBuyingPowerResult.Reason}.";
+
+                _algorithm.Error(errorMessage);
+
+                if (request is UpdateOrderRequest)
+                {
+                    HandleOrderEvent(new OrderEvent(order, _algorithm.UtcTime, OrderFee.Zero, errorMessage));
+                    response = OrderResponse.Error(request, OrderResponseErrorCode.BrokerageFailedToUpdateOrder, errorMessage);
+                }
+                else
+                {
+                    InvalidateOrders(orders, errorMessage);
+                    response = OrderResponse.Error(request, OrderResponseErrorCode.InsufficientBuyingPower, errorMessage);
+                }
+                return false;
+            }
+
+            return true;
+        }
+
         private void HandleOrderEvents(List<OrderEvent> orderEvents)
         {
             lock (_lockHandleOrderEvent)
@@ -1123,19 +1173,6 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                         case OrderStatus.PartiallyFilled:
                         case OrderStatus.Filled:
                             order.LastFillTime = orderEvent.UtcTime;
-
-                            // append fill message to order tag, for additional information
-                            if (orderEvent.Status == OrderStatus.Filled && !string.IsNullOrWhiteSpace(orderEvent.Message))
-                            {
-                                if (string.IsNullOrWhiteSpace(order.Tag))
-                                {
-                                    order.Tag = orderEvent.Message;
-                                }
-                                else
-                                {
-                                    order.Tag += " - " + orderEvent.Message;
-                                }
-                            }
                             break;
 
                         case OrderStatus.UpdateSubmitted:

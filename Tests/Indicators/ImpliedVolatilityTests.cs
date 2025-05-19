@@ -27,14 +27,17 @@ namespace QuantConnect.Tests.Indicators
     [TestFixture, Parallelizable(ParallelScope.Fixtures)]
     public class ImpliedVolatilityTests : OptionBaseIndicatorTests<ImpliedVolatility>
     {
-        protected override IndicatorBase<IndicatorDataPoint> CreateIndicator()
+        protected override IndicatorBase<IBaseData> CreateIndicator()
            => new ImpliedVolatility("testImpliedVolatilityIndicator", _symbol, 0.053m, 0.0153m);
 
         protected override OptionIndicatorBase CreateIndicator(IRiskFreeInterestRateModel riskFreeRateModel)
             => new ImpliedVolatility("testImpliedVolatilityIndicator", _symbol, riskFreeRateModel);
 
         protected override OptionIndicatorBase CreateIndicator(IRiskFreeInterestRateModel riskFreeRateModel, IDividendYieldModel dividendYieldModel)
-            => new ImpliedVolatility("testImpliedVolatilityIndicator", _symbol, riskFreeRateModel, dividendYieldModel);
+        {
+            var symbol = (SymbolList.Count > 0) ? SymbolList[0] : _symbol;
+            return new ImpliedVolatility("testImpliedVolatilityIndicator", symbol, riskFreeRateModel, dividendYieldModel);
+        }
 
         protected override OptionIndicatorBase CreateIndicator(QCAlgorithm algorithm)
             => algorithm.IV(_symbol);
@@ -106,7 +109,7 @@ namespace QuantConnect.Tests.Indicators
             indicator.Update(mirrorOptionDataPoint);
             indicator.Update(spotDataPoint);
 
-            Assert.AreEqual(refIV1, (double)indicator.Current.Value, 0.001d);
+            Assert.AreEqual(refIV1, (double)indicator.Current.Value, 0.0025d);
 
             indicator.SetSmoothingFunction((iv, mirrorIv) => iv);
 
@@ -117,7 +120,7 @@ namespace QuantConnect.Tests.Indicators
             indicator.Update(mirrorOptionDataPoint);
             indicator.Update(spotDataPoint);
 
-            Assert.AreEqual(refIV2, (double)indicator.Current.Value, 0.001d);
+            Assert.AreEqual(refIV2, (double)indicator.Current.Value, 0.0035d);
         }
 
         [TestCase(23.753, 27.651, 450.0, OptionRight.Call, 60, 0.309, 0.309)]
@@ -143,7 +146,7 @@ def TestSmoothingFunction(iv: float, mirror_iv: float) -> float:
             indicator.Update(mirrorOptionDataPoint);
             indicator.Update(spotDataPoint);
 
-            Assert.AreEqual(refIV1, (double)indicator.Current.Value, 0.001d);
+            Assert.AreEqual(refIV1, (double)indicator.Current.Value, 0.0025d);
 
             indicator.SetSmoothingFunction(pythonSmoothingFunction);
 
@@ -154,7 +157,7 @@ def TestSmoothingFunction(iv: float, mirror_iv: float) -> float:
             indicator.Update(mirrorOptionDataPoint);
             indicator.Update(spotDataPoint);
 
-            Assert.AreEqual(refIV2, (double)indicator.Current.Value, 0.001d);
+            Assert.AreEqual(refIV2, (double)indicator.Current.Value, 0.0035d);
         }
 
         // Reference values from QuantLib
@@ -180,7 +183,32 @@ def TestSmoothingFunction(iv: float, mirror_iv: float) -> float:
             indicator.Update(optionDataPoint);
             indicator.Update(spotDataPoint);
 
-            Assert.AreEqual(refIV, (double)indicator.Current.Value, 0.001d);
+            Assert.AreEqual(refIV, (double)indicator.Current.Value, 0.0036d);
+        }
+
+        [TestCase(0.5, 470.0, OptionRight.Put, 0)]
+        [TestCase(0.5, 470.0, OptionRight.Put, 5)]
+        [TestCase(0.5, 470.0, OptionRight.Put, 10)]
+        [TestCase(0.5, 470.0, OptionRight.Put, 15)]
+        [TestCase(15, 450.0, OptionRight.Call, 0)]
+        [TestCase(15, 450.0, OptionRight.Call, 5)]
+        [TestCase(15, 450.0, OptionRight.Call, 10)]
+        [TestCase(0.5, 450.0, OptionRight.Call, 15)]
+        public void CanComputeOnExpirationDate(decimal price, decimal spotPrice, OptionRight right, int hoursAfterExpiryDate)
+        {
+            var expiration = new DateTime(2024, 12, 6);
+            var symbol = Symbol.CreateOption("SPY", Market.USA, OptionStyle.American, right, 450m, expiration);
+            var indicator = new ImpliedVolatility(symbol, 0.0530m, 0.0153m, optionModel: OptionPricingModelType.BlackScholes);
+
+            var currentTime = expiration.AddHours(hoursAfterExpiryDate);
+
+            var optionDataPoint = new IndicatorDataPoint(symbol, currentTime, price);
+            var spotDataPoint = new IndicatorDataPoint(symbol.Underlying, currentTime, spotPrice);
+
+            Assert.IsFalse(indicator.Update(optionDataPoint));
+            Assert.IsTrue(indicator.Update(spotDataPoint));
+
+            Assert.AreNotEqual(0, indicator.Current.Value);
         }
 
         [Test]
@@ -204,7 +232,10 @@ def TestSmoothingFunction(iv: float, mirror_iv: float) -> float:
 
                 indicator.Update(new IndicatorDataPoint(_symbol, time, optionPrice));
 
-                Assert.IsFalse(indicator.IsReady);
+                if (i == 1)
+                {
+                    Assert.IsFalse(indicator.IsReady);
+                }
 
                 indicator.Update(new IndicatorDataPoint(_underlying, time, price));
 

@@ -163,6 +163,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 return false;
             }
 
+            BaseSetupHandler.Setup(parameters);
 
             // attach to the message event to relay brokerage specific initialization messages
             EventHandler<BrokerageMessageEvent> brokerageOnMessage = (sender, args) =>
@@ -243,7 +244,6 @@ namespace QuantConnect.Lean.Engine.Setup
 
                         //Algorithm is live, not backtesting:
                         algorithm.SetAlgorithmMode(liveJob.AlgorithmMode);
-                        algorithm.SetDeploymentTarget(liveJob.DeploymentTarget);
 
                         //Initialize the algorithm's starting date
                         algorithm.SetDateTime(DateTime.UtcNow);
@@ -254,7 +254,9 @@ namespace QuantConnect.Lean.Engine.Setup
                         var optionChainProvider = Composer.Instance.GetPart<IOptionChainProvider>();
                         if (optionChainProvider == null)
                         {
-                            optionChainProvider = new CachingOptionChainProvider(new LiveOptionChainProvider(parameters.DataCacheProvider, parameters.MapFileProvider));
+                            var baseOptionChainProvider = new LiveOptionChainProvider();
+                            baseOptionChainProvider.Initialize(new(parameters.MapFileProvider, algorithm.HistoryProvider));
+                            optionChainProvider = new CachingOptionChainProvider(baseOptionChainProvider);
                             Composer.Instance.AddPart(optionChainProvider);
                         }
                         // set the option chain provider
@@ -263,7 +265,9 @@ namespace QuantConnect.Lean.Engine.Setup
                         var futureChainProvider = Composer.Instance.GetPart<IFutureChainProvider>();
                         if (futureChainProvider == null)
                         {
-                            futureChainProvider = new CachingFutureChainProvider(new LiveFutureChainProvider(parameters.DataCacheProvider));
+                            var baseFutureChainProvider = new LiveFutureChainProvider();
+                            baseFutureChainProvider.Initialize(new(parameters.MapFileProvider, algorithm.HistoryProvider));
+                            futureChainProvider = new CachingFutureChainProvider(baseFutureChainProvider);
                             Composer.Instance.AddPart(futureChainProvider);
                         }
                         // set the future chain provider

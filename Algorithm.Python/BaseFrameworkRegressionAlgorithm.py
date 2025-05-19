@@ -35,7 +35,7 @@ class BaseFrameworkRegressionAlgorithm(QCAlgorithm):
         # With this procedure, the Alpha Model will experience multiple universe changes
         self.add_universe_selection(ScheduledUniverseSelectionModel(
             self.date_rules.every_day(), self.time_rules.midnight,
-            lambda dt: symbols if dt.replace(tzinfo=None) < self.end_date - timedelta(1) else []))
+            lambda dt: symbols if dt < self.end_date - timedelta(1) else []))
 
         self.set_alpha(ConstantAlphaModel(InsightType.PRICE, InsightDirection.UP, timedelta(31), 0.025, None))
         self.set_portfolio_construction(EqualWeightingPortfolioConstructionModel())
@@ -46,4 +46,4 @@ class BaseFrameworkRegressionAlgorithm(QCAlgorithm):
         # The base implementation checks for active insights
         insights_count = len(self.insights.get_insights(lambda insight: insight.is_active(self.utc_time)))
         if insights_count != 0:
-            raise Exception(f"The number of active insights should be 0. Actual: {insights_count}")
+            raise AssertionError(f"The number of active insights should be 0. Actual: {insights_count}")

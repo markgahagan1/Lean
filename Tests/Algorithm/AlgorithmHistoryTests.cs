@@ -37,6 +37,7 @@ using HistoryRequest = QuantConnect.Data.HistoryRequest;
 using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Tests.Common.Data.Fundamental;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Tests.Algorithm
 {
@@ -134,7 +135,7 @@ def getHistory(algorithm, symbol):
             if (language == Language.CSharp)
             {
                 // Trades and quotes
-                var result = _algorithm.History(new [] { Symbols.SPY }, start, _algorithm.Time, resolution).ToList();
+                var result = _algorithm.History(new[] { Symbols.SPY }, start, _algorithm.Time, resolution).ToList();
 
                 var expectedSpan = resolution == Resolution.Daily ? TimeSpan.FromHours(6.5) : resolution.ToTimeSpan();
                 Assert.AreEqual(expectedHistoryCount, result.Count);
@@ -241,7 +242,7 @@ def getHistory(algorithm, symbol, start, resolution):
 
             if (language == Language.CSharp)
             {
-                var result = _algorithm.History(new [] { Symbols.SPY }, start.AddHours(9.8), start.AddHours(10), Resolution.Tick).ToList();
+                var result = _algorithm.History(new[] { Symbols.SPY }, start.AddHours(9.8), start.AddHours(10), Resolution.Tick).ToList();
                 var result2 = _algorithm.History<Tick>(Symbols.SPY, start.AddHours(9.8), start.AddHours(10), Resolution.Tick).ToList();
 
                 Assert.IsNotEmpty(result);
@@ -302,6 +303,87 @@ def getTradesOnlyHistory(algorithm, symbol, start):
             Assert.Throws<InvalidOperationException>(() => _algorithm.History(spy, 1, Resolution.Tick).ToList());
         }
 
+        [TestCase(Resolution.Tick, Resolution.Tick, true)]
+        [TestCase(Resolution.Tick, Resolution.Second, true)]
+        [TestCase(Resolution.Tick, Resolution.Minute, true)]
+        [TestCase(Resolution.Tick, Resolution.Hour, true)]
+        [TestCase(Resolution.Tick, Resolution.Daily, true)]
+        [TestCase(Resolution.Second, Resolution.Tick, true)]
+        [TestCase(Resolution.Second, Resolution.Second, true)]
+        [TestCase(Resolution.Second, Resolution.Minute, true)]
+        [TestCase(Resolution.Second, Resolution.Hour, true)]
+        [TestCase(Resolution.Second, Resolution.Daily, true)]
+        [TestCase(Resolution.Minute, Resolution.Tick, true)]
+        [TestCase(Resolution.Minute, Resolution.Second, true)]
+        [TestCase(Resolution.Minute, Resolution.Minute, true)]
+        [TestCase(Resolution.Minute, Resolution.Hour, true)]
+        [TestCase(Resolution.Minute, Resolution.Daily, true)]
+        [TestCase(Resolution.Hour, Resolution.Tick, false)]
+        [TestCase(Resolution.Hour, Resolution.Second, false)]
+        [TestCase(Resolution.Hour, Resolution.Minute, false)]
+        [TestCase(Resolution.Hour, Resolution.Hour, false)]
+        [TestCase(Resolution.Hour, Resolution.Daily, false)]
+        [TestCase(Resolution.Daily, Resolution.Tick, false)]
+        [TestCase(Resolution.Daily, Resolution.Second, false)]
+        [TestCase(Resolution.Daily, Resolution.Minute, false)]
+        [TestCase(Resolution.Daily, Resolution.Hour, false)]
+        [TestCase(Resolution.Daily, Resolution.Daily, false)]
+        public void VerifyReceivedDataBasedOnHistoryResolutionOnly(Resolution historyResolution, Resolution equityResolution, bool expected)
+        {
+            var algorithm = GetAlgorithm(new DateTime(2013, 10, 1));
+            algorithm.SetStartDate(2013, 10, 8);
+            var spy = algorithm.AddEquity("SPY", Resolution.Minute).Symbol;
+            var ibm = algorithm.AddEquity("IBM", equityResolution).Symbol;
+
+            // Flags to check if there's Quote data for SPY and IBM
+            var spyFlag = false;
+            var ibmFlag = false;
+
+            // If the history resolution is Tick, check for Quote-type ticks
+            if (historyResolution == Resolution.Tick)
+            {
+                var start = new DateTime(2013, 10, 7, 15, 0, 0);
+                var allHistory = algorithm.History(new[] { spy, ibm }, start, start.AddSeconds(5), historyResolution).SelectMany(slice => slice.AllData);
+                // Filter the data to get only the Quote-type ticks
+                var ticks = allHistory.OfType<Tick>().Where(e => e.TickType == TickType.Quote).ToList();
+                spyFlag = ticks.Any(e => e.Symbol == spy);
+                ibmFlag = ticks.Any(e => e.Symbol == ibm);
+            }
+            else
+            {
+                var allHistory = algorithm.History(new[] { spy, ibm }, TimeSpan.FromDays(1), historyResolution).SelectMany(slice => slice.AllData).ToList();
+                // Checking for QuoteBar data for SPY and IBM
+                var quoteBars = allHistory.Where(e => e.DataType == MarketDataType.QuoteBar).ToList();
+                spyFlag |= quoteBars.Any(e => e.Symbol == spy);
+                ibmFlag |= quoteBars.Any(e => e.Symbol == ibm);
+            }
+
+            // Assert that the flags match the expected value
+            Assert.AreEqual(expected, spyFlag);
+            Assert.AreEqual(expected, ibmFlag);
+        }
+
+        [Test]
+        public void VerifyHistorySupportsSpecificDataTypes()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2013, 10, 8));
+            algorithm.SetStartDate(2013, 10, 10);
+            var spy = algorithm.AddEquity("SPY", Resolution.Minute).Symbol;
+            var ibm = algorithm.AddEquity("IBM", Resolution.Hour).Symbol;
+
+            var tradeBarHistory = algorithm.History<TradeBar>(new[] { spy, ibm }, TimeSpan.FromDays(1), Resolution.Minute).ToList();
+            var generalHistory = algorithm.History(new[] { spy, ibm }, TimeSpan.FromDays(1), Resolution.Minute).ToList();
+
+            // Extract all TradeBars
+            var tradeBars = tradeBarHistory.SelectMany(slice => slice.Values).ToList();
+
+            // Filter and extract only TradeBars from the general history
+            var filteredTradeBars = generalHistory.SelectMany(slice => slice.AllData).Where(e => e.DataType == MarketDataType.TradeBar).ToList();
+
+            // Assert that the count of TradeBars in both methods is consistent
+            Assert.AreEqual(filteredTradeBars.Count, tradeBars.Count);
+        }
+
         [TestCase(Language.CSharp)]
         [TestCase(Language.Python)]
         public void TickResolutionPeriodBasedHistoryRequestThrowsException(Language language)
@@ -312,8 +394,8 @@ def getTradesOnlyHistory(algorithm, symbol, start):
             {
                 Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(spy, 1).ToList());
                 Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(spy, 1, Resolution.Tick).ToList());
-                Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(new [] { spy }, 1).ToList());
-                Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(new [] { spy }, 1, Resolution.Tick).ToList());
+                Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(new[] { spy }, 1).ToList());
+                Assert.Throws<InvalidOperationException>(() => _algorithm.History<Tick>(new[] { spy }, 1, Resolution.Tick).ToList());
             }
             else
             {
@@ -322,7 +404,7 @@ def getTradesOnlyHistory(algorithm, symbol, start):
                     _algorithm.SetPandasConverter();
 
                     foreach (var testCase in new[] { "return algorithm.History(Tick, symbol, 1)", "return algorithm.History(Tick, symbol, 1)",
-                        "return algorithm.History(Tick, [ symbol ], 1)", "return algorithm.History(Tick, [ symbol ], 1, Resolution.Tick)" } )
+                        "return algorithm.History(Tick, [ symbol ], 1)", "return algorithm.History(Tick, [ symbol ], 1, Resolution.Tick)" })
                     {
                         dynamic getTickHistory = PyModule.FromString("testModule",
                             @"from AlgorithmImports import *
@@ -398,7 +480,7 @@ def getTickHistory(algorithm, symbol, start, end):
                     using var pyAlgorithm = _algorithm.ToPython();
                     using var pySpy = spy.ToPython();
                     using var pyIbm = ibm.ToPython();
-                    using var pySymbols = new PyList(new [] { pySpy, pyIbm });
+                    using var pySymbols = new PyList(new[] { pySpy, pyIbm });
                     using var pyStart = start.ToPython();
                     using var pyEnd = end.ToPython();
 
@@ -596,8 +678,6 @@ def getTickHistory(algorithm, symbol, start, end):
                 Assert.AreEqual(typeof(OptionUniverse), request.DataType);
                 Assert.IsFalse(request.IncludeExtendedMarketHours);
                 Assert.IsFalse(request.IsCustomData);
-                // For OptionUniverse, exchange and data time zones are set to the same value
-                Assert.AreEqual(request.ExchangeHours.TimeZone, request.DataTimeZone);
             }
         }
 
@@ -617,7 +697,7 @@ def getTickHistory(algorithm, symbol, start, end):
             }
             if (language == Language.CSharp)
             {
-                _algorithm.History(new [] { symbol }, new DateTime(1,1,1,1,1,1), new DateTime(1, 1, 1, 1, 1, 2), Resolution.Tick,
+                _algorithm.History(new[] { symbol }, new DateTime(1, 1, 1, 1, 1, 1), new DateTime(1, 1, 1, 1, 1, 2), Resolution.Tick,
                     fillForward: true);
             }
             else
@@ -625,8 +705,8 @@ def getTickHistory(algorithm, symbol, start, end):
                 using (Py.GIL())
                 {
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] { symbol.ToPython()});
-                    _algorithm.History(symbols, new DateTime(1,1,1,1,1,1), new DateTime(1, 1, 1, 1, 1, 2),
+                    using var symbols = new PyList(new[] { symbol.ToPython() });
+                    _algorithm.History(symbols, new DateTime(1, 1, 1, 1, 1, 1), new DateTime(1, 1, 1, 1, 1, 2),
                         Resolution.Tick, fillForward: true);
                 }
             }
@@ -647,7 +727,7 @@ def getTickHistory(algorithm, symbol, start, end):
             var algorithm = GetAlgorithm(new DateTime(2014, 6, 6, 11, 0, 0));
 
             //20140606_twx_minute_quote_american_call_230000_20150117.csv
-            var optionSymbol = Symbol.CreateOption("TWX", Market.USA, OptionStyle.American, OptionRight.Call, 23, new DateTime(2015,1,17));
+            var optionSymbol = Symbol.CreateOption("TWX", Market.USA, OptionStyle.American, OptionRight.Call, 23, new DateTime(2015, 1, 17));
             var option = algorithm.AddOptionContract(optionSymbol);
 
             var lastKnownPrice = algorithm.GetLastKnownPrice(option);
@@ -807,7 +887,7 @@ class Test(PythonData):
 
             var option = algorithm.AddOptionContract(Symbols.CreateOptionSymbol("AAPL", OptionRight.Call, 250m, new DateTime(2016, 01, 15)));
 
-            var lastKnownPrices = algorithm.GetLastKnownPrices(option).ToList();;
+            var lastKnownPrices = algorithm.GetLastKnownPrices(option).ToList();
             Assert.AreEqual(2, lastKnownPrices.Count);
             Assert.AreEqual(1, lastKnownPrices.Count(data => data.GetType() == typeof(TradeBar)));
             Assert.AreEqual(1, lastKnownPrices.Count(data => data.GetType() == typeof(QuoteBar)));
@@ -874,7 +954,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
         ").GetAttr("getOpenInterestHistory");
 
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] {optionSymbol.ToPython()});
+                    using var symbols = new PyList(new[] { optionSymbol.ToPython() });
                     using var dict = getOpenInterestHistory
                         .Invoke(_algorithm.ToPython(), symbols, start.ToPython(), end.ToPython(),
                             historyResolution.ToPython());
@@ -909,7 +989,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
 
             if (language == Language.CSharp)
             {
-                var result = _algorithm.History(new[] { optionSymbol }, start, end, historyResolution, fillForward:false).ToList();
+                var result = _algorithm.History(new[] { optionSymbol }, start, end, historyResolution, fillForward: false).ToList();
 
                 Assert.Multiple(() =>
                 {
@@ -934,7 +1014,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
         ").GetAttr("getOpenInterestHistory");
 
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] {optionSymbol.ToPython()});
+                    using var symbols = new PyList(new[] { optionSymbol.ToPython() });
                     using var openInterests = getOpenInterestHistory.Invoke(_algorithm.ToPython(), symbols, start.ToPython(), end.ToPython(),
                         historyResolution.ToPython());
                     Assert.AreEqual(780, openInterests.GetAttr("shape")[0].As<int>());
@@ -985,7 +1065,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
         ").GetAttr("getOpenInterestHistory");
 
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] { optionSymbol.ToPython(), optionSymbol2.ToPython() });
+                    using var symbols = new PyList(new[] { optionSymbol.ToPython(), optionSymbol2.ToPython() });
                     var result = getOpenInterestHistory
                         .Invoke(_algorithm.ToPython(), symbols, start.ToPython(), end.ToPython(), historyResolution.ToPython());
                     Assert.AreEqual(1170, result.GetAttr("shape")[0].As<int>());
@@ -1016,9 +1096,9 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
 
             if (language == Language.CSharp)
             {
-               var historyResults = dataMappingModes
-                    .Select(x => _algorithm.History(new [] { symbol }, historyStart, historyEnd, resolution, dataMappingMode: x).ToList())
-                    .ToList();
+                var historyResults = dataMappingModes
+                     .Select(x => _algorithm.History(new[] { symbol }, historyStart, historyEnd, resolution, dataMappingMode: x).ToList())
+                     .ToList();
 
                 CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
 
@@ -1059,7 +1139,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                 using (Py.GIL())
                 {
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] { symbol.ToPython() });
+                    using var symbols = new PyList(new[] { symbol.ToPython() });
                     var historyResults = dataMappingModes
                         .Select(x => _algorithm.History(symbols, historyStart, historyEnd, resolution, dataMappingMode: x))
                         .ToList();
@@ -1093,7 +1173,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
             {
                 historyCall = () =>
                 {
-                    _algorithm.History(new [] { equity.Symbol }, start, end, equity.Resolution,
+                    _algorithm.History(new[] { equity.Symbol }, start, end, equity.Resolution,
                         dataNormalizationMode: dataNormalizationMode).ToList();
                 };
             }
@@ -1104,7 +1184,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                     using (Py.GIL())
                     {
                         _algorithm.SetPandasConverter();
-                        var symbols = new PyList(new [] { equity.Symbol.ToPython() });
+                        var symbols = new PyList(new[] { equity.Symbol.ToPython() });
                         _algorithm.History(symbols, start, end, equity.Resolution, dataNormalizationMode: dataNormalizationMode);
                     }
                 };
@@ -1134,7 +1214,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
             {
                 historyCall = () =>
                 {
-                    _algorithm.History(new [] { future.Symbol }, start, end, future.Resolution,
+                    _algorithm.History(new[] { future.Symbol }, start, end, future.Resolution,
                         dataNormalizationMode: dataNormalizationMode).ToList();
                 };
             }
@@ -1145,7 +1225,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                     using (Py.GIL())
                     {
                         _algorithm.SetPandasConverter();
-                        var symbols = new PyList(new [] { future.Symbol.ToPython() });
+                        var symbols = new PyList(new[] { future.Symbol.ToPython() });
                         _algorithm.History(symbols, start, end, future.Resolution, dataNormalizationMode: dataNormalizationMode);
                     }
                 };
@@ -1177,7 +1257,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
             {
                 historyCall = () =>
                 {
-                    _algorithm.History(new [] { equity.Symbol }, start, end, equity.Resolution,
+                    _algorithm.History(new[] { equity.Symbol }, start, end, equity.Resolution,
                         dataNormalizationMode: dataNormalizationMode).ToList();
                 };
             }
@@ -1188,7 +1268,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                     using (Py.GIL())
                     {
                         _algorithm.SetPandasConverter();
-                        var symbols = new PyList(new [] { equity.Symbol.ToPython() });
+                        var symbols = new PyList(new[] { equity.Symbol.ToPython() });
                         _algorithm.History(symbols, start, end, equity.Resolution, dataNormalizationMode: dataNormalizationMode);
                     }
                 };
@@ -1220,7 +1300,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
             {
                 historyCall = () =>
                 {
-                    _algorithm.History(new [] { future.Symbol }, start, end, future.Resolution,
+                    _algorithm.History(new[] { future.Symbol }, start, end, future.Resolution,
                         dataNormalizationMode: dataNormalizationMode).ToList();
                 };
             }
@@ -1231,7 +1311,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                     using (Py.GIL())
                     {
                         _algorithm.SetPandasConverter();
-                        var symbols = new PyList(new [] { future.Symbol.ToPython() });
+                        var symbols = new PyList(new[] { future.Symbol.ToPython() });
                         _algorithm.History(symbols, start, end, future.Resolution, dataNormalizationMode: dataNormalizationMode);
                     }
                 };
@@ -1297,7 +1377,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
             {
                 Func<int, List<Slice>> getHistoryForContractDepthOffset = (contractDepthOffset) =>
                 {
-                    return _algorithm.History(new [] { future.Symbol }, start, end, future.Resolution, contractDepthOffset: contractDepthOffset).ToList();
+                    return _algorithm.History(new[] { future.Symbol }, start, end, future.Resolution, contractDepthOffset: contractDepthOffset).ToList();
                 };
 
                 var frontMonthHistory = getHistoryForContractDepthOffset(0);
@@ -1326,7 +1406,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                 Assert.AreNotEqual(frontMonthHistoryUnderlyings, backMonthHistory2Underlyings);
                 Assert.AreNotEqual(backMonthHistory1Underlyings, backMonthHistory2Underlyings);
 
-                var historyResults = new List<List<Slice>>{ frontMonthHistory, backMonthHistory1, backMonthHistory2 };
+                var historyResults = new List<List<Slice>> { frontMonthHistory, backMonthHistory1, backMonthHistory2 };
                 CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
                 CheckThatHistoryResultsHaveDifferentPrices(historyResults,
                     "History results prices should have been different for each data mapping mode at each time");
@@ -1336,7 +1416,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                 using (Py.GIL())
                 {
                     _algorithm.SetPandasConverter();
-                    using var symbols = new PyList(new [] { future.Symbol.ToPython() });
+                    using var symbols = new PyList(new[] { future.Symbol.ToPython() });
 
                     Func<int, PyObject> getHistoryForContractDepthOffset = (contractDepthOffset) =>
                     {
@@ -1351,10 +1431,10 @@ def getOpenInterestHistory(algorithm, symbol, start, end, resolution):
                     Assert.Greater(backMonthHistory1.GetAttr("shape")[0].As<int>(), 0);
                     Assert.Greater(backMonthHistory2.GetAttr("shape")[0].As<int>(), 0);
 
-                var historyResults = new List<PyObject>{ frontMonthHistory, backMonthHistory1, backMonthHistory2 };
-                CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
-                CheckThatHistoryResultsHaveDifferentPrices(historyResults,
-                    "History results prices should have been different for each contract depth offset at each time");
+                    var historyResults = new List<PyObject> { frontMonthHistory, backMonthHistory1, backMonthHistory2 };
+                    CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
+                    CheckThatHistoryResultsHaveDifferentPrices(historyResults,
+                        "History results prices should have been different for each contract depth offset at each time");
                 }
             }
         }
@@ -1609,7 +1689,7 @@ def getHistoryForDataMappingMode(algorithm, symbol, start, end, resolution, data
         {
             var start = new DateTime(2013, 10, 6);
             var end = new DateTime(2014, 1, 1);
-            var  algorithm = GetAlgorithmWithFuture(end);
+            var algorithm = GetAlgorithmWithFuture(end);
             var future = algorithm.SubscriptionManager.Subscriptions.First();
 
             using (Py.GIL())
@@ -1623,7 +1703,7 @@ def getHistoryForContractDepthOffset(algorithm, symbol, start, end, resolution, 
         ").GetAttr("getHistoryForContractDepthOffset");
 
                 algorithm.SetPandasConverter();
-                using var symbols = new PyList(new [] { future.Symbol.ToPython() });
+                using var symbols = new PyList(new[] { future.Symbol.ToPython() });
                 var pyAlgorithm = algorithm.ToPython();
                 var pyStart = start.ToPython();
                 var pyEnd = end.ToPython();
@@ -1637,7 +1717,7 @@ def getHistoryForContractDepthOffset(algorithm, symbol, start, end, resolution, 
                 Assert.Greater(backMonthHistory1.GetAttr("shape")[0].As<int>(), 0);
                 Assert.Greater(backMonthHistory2.GetAttr("shape")[0].As<int>(), 0);
 
-                var historyResults = new List<PyObject>{ frontMonthHistory, backMonthHistory1, backMonthHistory2 };
+                var historyResults = new List<PyObject> { frontMonthHistory, backMonthHistory1, backMonthHistory2 };
                 CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount: 61);
                 CheckThatHistoryResultsHaveDifferentPrices(historyResults,
                     "History results prices should have been different for each contract depth offset at each time");
@@ -1669,7 +1749,7 @@ def getHistoryForContractDepthOffset(algorithm, symbol, start, end, resolution, 
                 Assert.AreEqual(132104, tickHistory.Count());
 
                 var openInterestHistory = algorithm.History<OpenInterest>(twxSymbol, twxHistoryStart, twxHistoryEnd);
-                Assert.AreEqual(1050, openInterestHistory.Count());
+                Assert.AreEqual(391, openInterestHistory.Count());
             }
             else
             {
@@ -1709,7 +1789,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end):
                     Assert.AreEqual(132104, tickHistory.shape[0].As<int>());
 
                     dynamic openInterestHistory = getOpenInterestHistory(algorithm, twxSymbol, twxHistoryStart, twxHistoryEnd);
-                    Assert.AreEqual(1050, openInterestHistory.shape[0].As<int>());
+                    Assert.AreEqual(391, openInterestHistory.shape[0].As<int>());
                 }
             }
         }
@@ -1723,7 +1803,7 @@ def getOpenInterestHistory(algorithm, symbol, start, end):
             var start = new DateTime(2013, 10, 7);
             var end = new DateTime(2013, 10, 8);
 
-            var history = algorithm.History(new [] { ibmSymbol }, start, end, Resolution.Tick);
+            var history = algorithm.History(new[] { ibmSymbol }, start, end, Resolution.Tick);
             var tickCountInSliceHistoryCall = history.Sum(x => x.Ticks[ibmSymbol].Count);
             Assert.AreEqual(132104, tickCountInSliceHistoryCall);
 
@@ -1778,16 +1858,14 @@ def getOpenInterestHistory(algorithm, symbol, start, end):
                 if (rawBar.Time <= lastFactorDate)
                 {
                     Assert.AreNotEqual(rawBar.Price, scaledRawBar.Price,
-                        $@"Raw price {rawBar.Price} should have been different than scaled raw price {scaledRawBar.Price} at {
-                            rawBar.Time} (before and at the last factor date {lastFactorDate})");
+                        $@"Raw price {rawBar.Price} should have been different than scaled raw price {scaledRawBar.Price} at {rawBar.Time} (before and at the last factor date {lastFactorDate})");
                 }
                 else
                 {
                     // after the last split/dividend, the factor is 1 because prices are adjusted to the prices after the last factor
                     Assert.AreEqual(1m, factors[currentFactorIndex] / lastFactor);
                     Assert.AreEqual(rawBar.Price, scaledRawBar.Price,
-                        $@"Raw price {rawBar.Price} should have been equal to the scaled raw price {scaledRawBar.Price} at {
-                            rawBar.Time} (after the last factor date {lastFactorDate})");
+                        $@"Raw price {rawBar.Price} should have been equal to the scaled raw price {scaledRawBar.Price} at {rawBar.Time} (after the last factor date {lastFactorDate})");
                 }
 
                 var expectedScaledRawPrice = rawBar.Price * factors[currentFactorIndex] / lastFactor;
@@ -2584,7 +2662,7 @@ tradeBar = TradeBar
                     AssertFuturesHistoryWithDifferentMappingModesResults(historyResults, symbol, expectedHistoryCount);
                     // Same as previous but using a Symbol instead of pySymbol
                     historyResults = dataMappingModes
-                        .Select(mappingMode => algorithm.History(pyTradeBar,symbol, start, end, resolution, dataMappingMode: mappingMode))
+                        .Select(mappingMode => algorithm.History(pyTradeBar, symbol, start, end, resolution, dataMappingMode: mappingMode))
                         .ToList();
                     AssertFuturesHistoryWithDifferentMappingModesResults(historyResults, symbol, expectedHistoryCount);
 
@@ -3227,6 +3305,417 @@ def getHistory(algorithm, symbol, period):
             }
         }
 
+        [Test]
+        public void PythonUniverseHistoryDataFramesAreFlattened()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2014, 03, 28));
+            var universe = algorithm.AddUniverse(x => x.Select(x => x.Symbol));
+
+            using (Py.GIL())
+            {
+                PythonInitializer.Initialize();
+                algorithm.SetPandasConverter();
+
+                var testModule = PyModule.FromString("PythonHistoryDataFramesAreFlattened",
+                    @"
+from AlgorithmImports import *
+
+def getFlattenedUniverseHistory(algorithm, universe, period):
+    return algorithm.history(universe, period, flatten=True)
+
+def getUnflattenedUniverseHistory(algorithm, universe, period):
+    return algorithm.history(universe, period)
+
+def assertFlattenedHistoryDates(df, expected_dates):
+    assert df.index.levels[0].to_list() == expected_dates, f'Expected dates: {expected_dates}, actual dates: {df.index.levels[0].to_list()}'
+
+def assertUnflattenedHistoryDates(df, expected_dates):
+    assert df.index.to_list() == expected_dates, f'Expected dates: {expected_dates}, actual dates: {df.index.levels[0].to_list()}'
+
+def assertConstituents(flattened_df, unflattened_df, dates, expected_constituents_per_date):
+    for i, date in enumerate(dates):
+        unflattened_universe = unflattened_df.loc[date]
+        assert isinstance(unflattened_universe, list), f'Unflattened DF: expected a list, found {type(unflattened_universe)}'
+        assert len(unflattened_universe) == expected_constituents_per_date[i], f'Unflattened DF: expected {expected_constituents_per_date[i]} constituents for date {date}, got {len(unflattened_universe)}'
+
+        for constituent in unflattened_universe:
+            assert isinstance(constituent, Fundamental), f'Unflattened DF: expected a list of Fundamental, found {type(constituent)}'
+
+        flattened_sub_df = flattened_df.loc[date]
+        assert flattened_sub_df.shape[0] == len(unflattened_universe), f'Flattened DF: expected {len(unflattened_universe)} rows for date {date}, got {flattened_sub_df.shape[0]}'
+
+        flattened_universe_symbols = flattened_sub_df.index.to_list()
+        unflattened_universe_symbols = [constituent.symbol for constituent in unflattened_universe]
+        flattened_universe_symbols.sort()
+        unflattened_universe_symbols.sort()
+        assert flattened_universe_symbols == unflattened_universe_symbols, f'Flattened DF: flattened universe symbols are not equal to unflattened universe symbols for date {date}'
+    ");
+                dynamic getFlattenedUniverseHistory = testModule.GetAttr("getFlattenedUniverseHistory");
+                var flattenedDf = getFlattenedUniverseHistory(algorithm, universe, 3);
+
+                dynamic getUnflattenedUniverseHistory = testModule.GetAttr("getUnflattenedUniverseHistory");
+                var unflattenedDf = getUnflattenedUniverseHistory(algorithm, universe, 3);
+                // Drop the symbol
+                unflattenedDf = unflattenedDf.droplevel(0);
+
+                var expectedDates = new List<DateTime>
+                {
+                    new DateTime(2014, 03, 26),
+                    new DateTime(2014, 03, 27),
+                    new DateTime(2014, 03, 28)
+                };
+                dynamic assertFlattenedHistoryDates = testModule.GetAttr("assertFlattenedHistoryDates");
+                AssertDesNotThrowPythonException(() => assertFlattenedHistoryDates(flattenedDf, expectedDates));
+
+                dynamic assertUnflattenedHistoryDates = testModule.GetAttr("assertUnflattenedHistoryDates");
+                AssertDesNotThrowPythonException(() => assertUnflattenedHistoryDates(unflattenedDf, expectedDates));
+
+                var expectedConstituentsCounts = new[] { 7068, 7055, 7049 };
+                dynamic assertConstituents = testModule.GetAttr("assertConstituents");
+                AssertDesNotThrowPythonException(() => assertConstituents(flattenedDf, unflattenedDf, expectedDates, expectedConstituentsCounts));
+            }
+        }
+
+        [Test]
+        public void CSharpCustomUniverseHistoryDataFramesHaveExpectedFormat()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2015, 01, 15));
+            var universe = algorithm.AddUniverse<CustomUniverseData>("CustomUniverse", Resolution.Daily, (x) => x.Select(y => y.Symbol));
+
+            using (Py.GIL())
+            {
+                PythonInitializer.Initialize();
+                algorithm.SetPandasConverter();
+
+                using var testModule = PyModule.FromString("PythonCustomUniverseHistoryDataFramesHaveExpectedFormat",
+                    $@"
+from AlgorithmImports import *
+
+def get_universe_history(algorithm, universe, flatten):
+    return algorithm.history(universe, 3, flatten=flatten)
+    ");
+
+                dynamic getUniverseHistory = testModule.GetAttr("get_universe_history");
+                var df = getUniverseHistory(algorithm, universe, false);
+                var flattenedDf = getUniverseHistory(algorithm, universe, true);
+
+                Func<CustomUniverseData, decimal> getWeight = (data) => data.Weight;
+                AssertCustomUniverseDataFrames(df, flattenedDf, getWeight);
+
+                var columns = ((List<PyObject>)flattenedDf.columns.to_list().As<List<PyObject>>())
+                    .Select(column => column.InvokeMethod("__str__").GetAndDispose<string>());
+                CollectionAssert.DoesNotContain(columns, "data");
+            }
+        }
+
+        [Test]
+        public void PythonCustomUniverseHistoryDataFramesHaveExpectedFormat()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2015, 01, 15));
+
+            using (Py.GIL())
+            {
+                PythonInitializer.Initialize();
+                algorithm.SetPandasConverter();
+
+                using var testModule = PyModule.FromString("PythonCustomUniverseHistoryDataFramesHaveExpectedFormat",
+                    $@"
+from AlgorithmImports import *
+
+class CustomUniverseData(PythonData):
+
+    def get_source(self, config: SubscriptionDataConfig, date: datetime, is_live_mode: bool) -> SubscriptionDataSource:
+        return SubscriptionDataSource('TestData/portfolio_targets.csv',
+                                      SubscriptionTransportMedium.LOCAL_FILE,
+                                      FileFormat.FOLDING_COLLECTION)
+
+    def reader(self, config: SubscriptionDataConfig, line: str, date: datetime, is_live_mode: bool) -> BaseData:
+        # Skip the header row.
+        if not line[0].isnumeric():
+            return None
+        items = line.split(',')
+        data = CustomUniverseData()
+        data.end_time = datetime.strptime(items[0], '%Y-%m-%d')
+        data.time = data.end_time - timedelta(1)
+        data.symbol = Symbol.create(items[1], SecurityType.EQUITY, Market.USA)
+        data['weight'] = float(items[2])
+        return data
+
+def get_universe_history(algorithm, flatten):
+    universe = algorithm.add_universe(CustomUniverseData, 'CustomUniverse', Resolution.DAILY, lambda alt_coarse: [x.symbol for x in alt_coarse])
+    return algorithm.history(universe, 3, flatten=flatten)
+
+    ");
+
+                dynamic getUniverseHistory = testModule.GetAttr("get_universe_history");
+                var df = getUniverseHistory(algorithm, false);
+                var flattenedDf = getUniverseHistory(algorithm, true);
+
+                Func<PythonData, decimal> getWeight = (data) => Convert.ToDecimal(data.GetProperty("weight"));
+                AssertCustomUniverseDataFrames(df, flattenedDf, getWeight);
+            }
+        }
+
+        [Test]
+        public void PythonCustomUniverseHistoryCanBeFetchedUsingCSharpApi()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2018, 6, 1));
+
+            using (Py.GIL())
+            {
+                var testModule = PyModule.FromString("PythonCustomUniverseHistoryCanBeFetchedUsingCSharpApi",
+                    @"
+from AlgorithmImports import *
+
+
+class StockDataSource(PythonData):
+
+    def get_source(self, config: SubscriptionDataConfig, date: datetime, is_live: bool) -> SubscriptionDataSource:
+        source = ""../../TestData/daily-stock-picker-backtest.csv""
+        return SubscriptionDataSource(source, SubscriptionTransportMedium.LocalFile, FileFormat.Csv)
+
+    def reader(self, config: SubscriptionDataConfig, line: str, date: datetime, is_live: bool) -> BaseData:
+        if not (line.strip() and line[0].isdigit()): return None
+
+        stocks = StockDataSource()
+        stocks.symbol = config.symbol
+
+        try:
+            csv = line.split(',')
+            stocks.time = datetime.strptime(csv[0], ""%Y%m%d"")
+            stocks.end_time = stocks.time + timedelta(days=1)
+            stocks[""Symbols""] = csv[1:]
+
+        except ValueError:
+            # Do nothing
+            return None
+
+        return stocks
+
+def universe_selector(data):
+        return [x.symbol for x in data]
+
+def add_universe(algorithm):
+    return algorithm.add_universe(StockDataSource, ""universe-stock-data-source"", Resolution.DAILY, universe_selector)
+
+def get_history(algorithm, universe):
+    return list(algorithm.history[StockDataSource](universe.symbol, datetime(2018, 1, 1), datetime(2018, 6, 1), Resolution.DAILY))
+");
+
+                dynamic getUniverse = testModule.GetAttr("add_universe");
+                dynamic getHistory = testModule.GetAttr("get_history");
+
+                var universe = getUniverse(algorithm);
+                var history = getHistory(algorithm, universe).As<List<PythonData>>() as List<PythonData>;
+                Assert.IsNotEmpty(history);
+            }
+        }
+
+        [Test]
+        public void PythonCustomDataHistoryCanBeFetchedUsingCSharpApi()
+        {
+            var algorithm = GetAlgorithm(new DateTime(2013, 10, 8));
+
+            using (Py.GIL())
+            {
+                var testModule = PyModule.FromString("PythonCustomDataHistoryCanBeFetchedUsingCSharpApi",
+                    @"
+from AlgorithmImports import *
+from QuantConnect.Tests import *
+
+class MyCustomDataType(PythonData):
+
+    def get_source(self, config: SubscriptionDataConfig, date: datetime, is_live: bool) -> SubscriptionDataSource:
+        fileName = LeanData.GenerateZipFileName(Symbols.SPY, date, Resolution.MINUTE, config.TickType)
+        source = f'{Globals.DataFolder}equity/usa/minute/spy/{fileName}'
+        return SubscriptionDataSource(source, SubscriptionTransportMedium.LocalFile, FileFormat.Csv)
+
+    def reader(self, config: SubscriptionDataConfig, line: str, date: datetime, is_live: bool) -> BaseData:
+        data = line.split(',')
+        result = MyCustomDataType()
+        result.DataType = MarketDataType.Base
+        result.Symbol = config.Symbol
+        result.Time = date + timedelta(milliseconds=int(data[0]))
+        result.Value = 1
+
+        return result
+
+def add_data(algorithm):
+    return algorithm.add_data(MyCustomDataType, ""MyCustomDataType"", Resolution.DAILY)
+
+def get_history(algorithm, security):
+    return list(algorithm.history[MyCustomDataType](security.symbol, datetime(2013, 10, 7), datetime(2013, 10, 8), Resolution.MINUTE))
+");
+
+                dynamic getCustomSecurity = testModule.GetAttr("add_data");
+                dynamic getHistory = testModule.GetAttr("get_history");
+
+                var security = getCustomSecurity(algorithm);
+                var history = getHistory(algorithm, security).As<List<PythonData>>() as List<PythonData>;
+                Assert.IsNotEmpty(history);
+            }
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void HistoryHandlesSymbolChangedEventsCorrectly(bool useCreateSymbol)
+        {
+            var start = new DateTime(2021, 1, 1);
+            _algorithm = GetAlgorithm(start);
+            _algorithm.SetEndDate(2021, 1, 5);
+
+            Symbol symbol;
+            if (useCreateSymbol)
+            {
+                symbol = Symbol.Create(Futures.Indices.SP500EMini, SecurityType.Future, Market.CME);
+            }
+            else
+            {
+                var future = _algorithm.AddFuture(
+                    Futures.Indices.SP500EMini,
+                    dataMappingMode: DataMappingMode.OpenInterest,
+                    dataNormalizationMode: DataNormalizationMode.BackwardsRatio,
+                    contractDepthOffset: 0);
+                symbol = future.Symbol;
+            }
+
+            // Retrieve historical SymbolChangedEvent data
+            var history = _algorithm.History<SymbolChangedEvent>(symbol, TimeSpan.FromDays(365)).ToList();
+
+            // Ensure the history contains symbol change events
+            Assert.IsNotEmpty(history);
+            Assert.AreEqual(4, history.Count);
+
+            // Verify each event has valid old and new symbols, and they are different
+            foreach (var symbolChangedEvent in history)
+            {
+                Assert.IsNotNull(symbolChangedEvent.OldSymbol);
+                Assert.IsNotNull(symbolChangedEvent.NewSymbol);
+                Assert.AreNotEqual(symbolChangedEvent.OldSymbol, symbolChangedEvent.NewSymbol);
+            }
+        }
+
+        [Test]
+        public void OpenInterestHistoryOnlyContainsDataDuringRegularTradingHours()
+        {
+            var start = new DateTime(2013, 12, 01);
+            _algorithm = GetAlgorithm(start);
+            _algorithm.SetEndDate(2013, 12, 31);
+
+            // Add ES (E-mini S&P 500)
+            var future = _algorithm.AddFuture("ES", Resolution.Daily, Market.CME);
+
+            var history = _algorithm.History<OpenInterest>(future.Symbol, new DateTime(2013, 10, 10), new DateTime(2013, 11, 01), Resolution.Daily).ToList();
+
+            /* Expected 16 trading days breakdown:
+                October 2013:
+                10(Thu), 11(Fri),
+                14(Mon), 15(Tue), 16(Wed), 17(Thu), 18(Fri),
+                21(Mon), 22(Tue), 23(Wed), 24(Thu), 25(Fri),
+                28(Mon), 29(Tue), 30(Wed), 31(Thu)
+            */
+            Assert.AreEqual(16, history.Count);
+
+            // Regular trading hours: Monday-Friday 9:30am-5:00pm ET
+            foreach (var data in history)
+            {
+                var date = data.EndTime;
+                var dayOfWeek = date.DayOfWeek;
+                Assert.AreNotEqual(DayOfWeek.Saturday, dayOfWeek);
+                Assert.AreNotEqual(DayOfWeek.Sunday, dayOfWeek);
+            }
+        }
+
+        public class CustomUniverseData : BaseDataCollection
+        {
+            public decimal Weight { get; private set; }
+
+            public override SubscriptionDataSource GetSource(SubscriptionDataConfig config, DateTime date, bool isLiveMode)
+            {
+                return new SubscriptionDataSource("TestData/portfolio_targets.csv",
+                    SubscriptionTransportMedium.LocalFile,
+                    FileFormat.FoldingCollection);
+            }
+
+            public override BaseData Reader(SubscriptionDataConfig config, string line, DateTime date, bool isLiveMode)
+            {
+                var csv = line.Split(',');
+
+                try
+                {
+                    var endTime = DateTime.ParseExact(csv[0], "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    var symbol = Symbol.Create(csv[1], SecurityType.Equity, Market.USA);
+                    var weight = Convert.ToDecimal(csv[2], CultureInfo.InvariantCulture);
+
+                    return new CustomUniverseData
+                    {
+                        Symbol = symbol,
+                        Time = endTime - TimeSpan.FromDays(1),
+                        EndTime = endTime,
+                        Weight = weight
+                    };
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        private static void AssertCustomUniverseDataFrames<T>(dynamic df, dynamic flattenedDf, Func<T, decimal> getWeight)
+            where T : BaseData
+        {
+            var expectedDates = new List<DateTime>
+                {
+                    new DateTime(2015, 01, 13),
+                    new DateTime(2015, 01, 14),
+                    new DateTime(2015, 01, 15),
+                };
+
+            var flattenedDfDates = ((List<DateTime>)flattenedDf.index.get_level_values(0).to_list().As<List<DateTime>>()).Distinct().ToList();
+            CollectionAssert.AreEqual(expectedDates, flattenedDfDates);
+
+            var dfDates = ((List<DateTime>)df.index.get_level_values(1).to_list().As<List<DateTime>>()).Distinct().ToList();
+            CollectionAssert.AreEqual(expectedDates, dfDates);
+
+            df = df.droplevel(0); // drop symbol just to make access easier
+            foreach (var date in expectedDates)
+            {
+                using var pyDate = date.ToPython();
+                var constituents = (List<T>)df.loc[pyDate].As<List<T>>();
+                var flattendDfConstituents = flattenedDf.loc[pyDate];
+
+                CollectionAssert.IsNotEmpty(constituents);
+                Assert.AreEqual(flattendDfConstituents.shape[0].As<int>(), constituents.Count);
+
+                var constituentsSymbols = constituents.Select(x => x.Symbol).ToList();
+                var flattendDfConstituentsSymbols = ((List<Symbol>)flattendDfConstituents.index.to_list().As<List<Symbol>>()).ToList();
+                CollectionAssert.AreEqual(flattendDfConstituentsSymbols, constituentsSymbols);
+
+                var constituentsWeights = constituents.Select(x => getWeight(x)).ToList();
+                var flattendDfConstituentsWeights = constituentsSymbols
+                    .Select(symbol => flattendDfConstituents.loc[symbol.ToPython()]["weight"].As<decimal>())
+                    .Cast<decimal>()
+                    .ToList();
+                CollectionAssert.AreEqual(flattendDfConstituentsWeights, constituentsWeights);
+            }
+
+            Log.Debug((string)df.to_string());
+            Log.Debug((string)flattenedDf.to_string());
+        }
+
+        private static void AssertDesNotThrowPythonException(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (PythonException ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+        }
+
         private class ThrowingHistoryProvider : HistoryProviderBase
         {
             public override int DataPointCount => 0;
@@ -3343,10 +3832,10 @@ def getHistory(algorithm, symbol, period):
         }
 
         /// <summary>
-        /// Represents custom data with an optional sorting functionality. The <see cref="ExampleCustomDataWithSort"/> class 
+        /// Represents custom data with an optional sorting functionality. The <see cref="ExampleCustomDataWithSort"/> class
         /// allows you to specify a static property <seealso cref="CustomDataKey"/>, which defines the name of the custom data source.
         /// Sorting can be enabled or disabled by setting the <seealso cref="Sort"/> property.
-        /// This class overrides <see cref="GetSource(SubscriptionDataConfig, DateTime, bool)"/> to initialize the 
+        /// This class overrides <see cref="GetSource(SubscriptionDataConfig, DateTime, bool)"/> to initialize the
         /// <seealso cref="SubscriptionDataSource.Sort"/> property based on the value of <see cref="Sort"/>.
         /// </summary>
         public class ExampleCustomDataWithSort : BaseData
@@ -3367,7 +3856,7 @@ def getHistory(algorithm, symbol, period):
             public decimal Close { get; set; }
 
             /// <summary>
-            /// Returns the data source for the subscription. It uses the custom data key and sets sorting based on the 
+            /// Returns the data source for the subscription. It uses the custom data key and sets sorting based on the
             /// <see cref="Sort"/> property.
             /// </summary>
             /// <param name="config">Subscription configuration.</param>
@@ -3432,8 +3921,7 @@ def getHistory(algorithm, symbol, period):
         private static void CheckThatHistoryResultsHaveEqualBarCount<T>(IEnumerable<IEnumerable<T>> historyResults, int expectedHistoryCount)
         {
             Assert.That(historyResults, Has.All.Not.Empty.And.All.Count.EqualTo(expectedHistoryCount),
-                $@"Expected all history results to have {expectedHistoryCount} slices, but counts where {
-                    string.Join(", ", historyResults.Select(x => x.Count()))}");
+                $@"Expected all history results to have {expectedHistoryCount} slices, but counts where {string.Join(", ", historyResults.Select(x => x.Count()))}");
         }
 
         /// <summary>
@@ -3488,7 +3976,7 @@ def getHistory(algorithm, symbol, period):
             DateTime end, Resolution resolution, DataNormalizationMode[] dataNormalizationModes, int expectedHistoryCount)
         {
             var historyResults = dataNormalizationModes
-                .Select(x => algorithm.History(new [] { symbol }, start, end, resolution, dataNormalizationMode: x).ToList())
+                .Select(x => algorithm.History(new[] { symbol }, start, end, resolution, dataNormalizationMode: x).ToList())
                 .ToList();
 
             CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
@@ -3573,18 +4061,11 @@ def getHistory(algorithm, symbol, period):
                 if (resolution == Resolution.Daily)
                 {
                     var exchange = mhdb.GetExchangeHours(data.Symbol.ID.Market, data.Symbol, data.Symbol.SecurityType);
-                    if (!data.IsFillForward)
-                    {
-                        var marketHours = exchange.GetMarketHours(data.EndTime);
-                        expectedTimeSpan = marketHours.MarketDuration;
-                    }
-                    else
-                    {
-                        expectedTimeSpan = exchange.RegularMarketDuration;
-                    }
+                    var marketHours = exchange.GetMarketHours(data.EndTime);
+                    expectedTimeSpan = marketHours.MarketDuration;
                 }
                 return data.EndTime - data.Time == expectedTimeSpan;
-        }));
+            }));
         }
 
         private static List<PyObject> GetHistoryDataFrameIndex(PyObject history)
@@ -4024,7 +4505,9 @@ def getHistory(algorithm, symbol, period):
         {
             CheckThatHistoryResultsHaveEqualBarCount(historyResults, expectedHistoryCount);
 
-            var futureChainProvider = new BacktestingFutureChainProvider(TestGlobals.DataCacheProvider);
+            var futureChainProvider = new BacktestingFutureChainProvider();
+            futureChainProvider.Initialize(new(TestGlobals.MapFileProvider, TestGlobals.HistoryProvider));
+
             var firstDateTime = historyResults[0][0].EndTime;
             var futureChain = futureChainProvider.GetFutureContractList(expectedSymbol, firstDateTime).ToList();
 
@@ -4036,8 +4519,7 @@ def getHistory(algorithm, symbol, period):
                 var firstMappedContractSymbol = history[0].Symbol.Underlying;
 
                 Assert.AreEqual(futureChain[i], firstMappedContractSymbol,
-                    $@"History[{i}]: Expected the first mapped contract to be the one on index {i} ({futureChain[i]
-                        }) in the chain for date {firstDateTime}.");
+                    $@"History[{i}]: Expected the first mapped contract to be the one on index {i} ({futureChain[i]}) in the chain for date {firstDateTime}.");
 
                 // Finally, assert the resolution and symbol
                 AssertHistoryResultResolution(history, resolution);
